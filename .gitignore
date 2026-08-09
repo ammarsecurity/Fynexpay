@@ -8,3 +8,4 @@ obj/
 .env.local
 *.log
 .DS_Store
+backend/src/Fynexpay.Api/wwwroot/uploads/

@@ -1,0 +1,122 @@
+using Fynexpay.Application.DTOs;
+using Microsoft.OpenApi.Any;
+using Microsoft.OpenApi.Models;
+using Swashbuckle.AspNetCore.SwaggerGen;
+
+namespace Fynexpay.Api.Swagger;
+
+/// <summary>
+/// Keeps Merchant Swagger examples aligned with the Docs integration guide.
+/// </summary>
+public sealed class MerchantApiExamplesFilter : ISchemaFilter, IOperationFilter
+{
+    public void Apply(OpenApiSchema schema, SchemaFilterContext context)
+    {
+        if (context.Type == typeof(CreatePublicPaymentRequest))
+        {
+            schema.Description = "إنشاء دفعة — المنصة تُستنتج من X-Api-Key. لا ترسل merchantPlatformId.";
+            schema.Example = new OpenApiObject
+            {
+                ["amount"] = new OpenApiInteger(5000),
+                ["currency"] = new OpenApiString("IQD"),
+                ["orderId"] = new OpenApiString("ORD-1001"),
+                ["serviceType"] = new OpenApiString("Monthly subscription"),
+                ["callbackUrl"] = new OpenApiString("https://shop.example.com/hooks/fynexpay"),
+                ["successUrl"] = new OpenApiString("https://shop.example.com/success"),
+                ["failureUrl"] = new OpenApiString("https://shop.example.com/failed")
+            };
+            schema.Required = new HashSet<string> { "amount", "serviceType" };
+        }
+        else if (context.Type == typeof(CreatePayoutRequest))
+        {
+            schema.Example = new OpenApiObject
+            {
+                ["amount"] = new OpenApiInteger(100000),
+                ["destinationType"] = new OpenApiString("bank"),
+                ["destinationDetails"] = new OpenApiString("IBAN / account details")
+            };
+        }
+        else if (context.Type == typeof(PaymentDto))
+        {
+            schema.Example = new OpenApiObject
+            {
+                ["id"] = new OpenApiString("5bac8b83-0000-0000-0000-000000000001"),
+                ["merchantPlatformId"] = new OpenApiString("96590372-0000-0000-0000-000000000001"),
+                ["orderId"] = new OpenApiString("ORD-1001"),
+                ["amount"] = new OpenApiInteger(5000),
+                ["currency"] = new OpenApiString("IQD"),
+                ["status"] = new OpenApiString("Pending"),
+                ["provider"] = new OpenApiString("PendingSelection"),
+                ["description"] = new OpenApiString("Monthly subscription"),
+                ["checkoutUrl"] = new OpenApiString("http://localhost:5080/checkout/5bac8b83-0000-0000-0000-000000000001"),
+                ["platformFee"] = new OpenApiInteger(125),
+                ["netAmount"] = new OpenApiInteger(4875),
+                ["availableProviders"] = new OpenApiArray
+                {
+                    new OpenApiString("Qi"),
+                    new OpenApiString("ZainCash"),
+                    new OpenApiString("Fib"),
+                    new OpenApiString("SuperQi")
+                }
+            };
+        }
+    }
+
+    public void Apply(OpenApiOperation operation, OperationFilterContext context)
+    {
+        if (!string.Equals(context.ApiDescription.GroupName, "merchant", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var path = context.ApiDescription.RelativePath ?? "";
+        if (path.StartsWith("v1/payments", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(context.ApiDescription.HttpMethod, "POST", StringComparison.OrdinalIgnoreCase)
+            && !path.Contains("cancel", StringComparison.OrdinalIgnoreCase))
+        {
+            operation.Summary = "إنشاء دفعة";
+            operation.Description =
+                "أنشئ دفعة مربوطة بمنصة مفتاح الـ API. أعد توجيه الزبون إلى checkoutUrl ليختار المزود.\n\n" +
+                "Headers المطلوبة: `X-Api-Key`, `Content-Type: application/json`.\n" +
+                "موصى به: `X-Idempotency-Key`, و`Origin` عند الاستدعاء من المتصفح (يجب أن يطابق دومين المنصة).";
+
+            operation.Parameters ??= new List<OpenApiParameter>();
+            EnsureHeader(operation, "X-Idempotency-Key", "مفتاح منع التكرار — مثال: order-1001", example: "order-1001");
+            EnsureHeader(operation, "Origin", "أصل المتصفح إن وُجد — مثال: https://shop.example.com", example: "https://shop.example.com");
+        }
+        else if (path.StartsWith("v1/payments/{id}", StringComparison.OrdinalIgnoreCase)
+                 && string.Equals(context.ApiDescription.HttpMethod, "GET", StringComparison.OrdinalIgnoreCase))
+        {
+            operation.Summary = "حالة الدفعة";
+            operation.Description = "استعلام حالة دفعة بالمعرّف. استخدم نفس X-Api-Key الخاص بالمنصة.";
+        }
+        else if (path.Contains("cancel", StringComparison.OrdinalIgnoreCase))
+        {
+            operation.Summary = "إلغاء دفعة";
+            operation.Description = "إلغاء دفعة ما زالت Pending.";
+        }
+        else if (path.StartsWith("v1/wallet", StringComparison.OrdinalIgnoreCase))
+        {
+            operation.Summary = "المحفظة";
+            operation.Description = "رصيد التاجر والصافي المتاح للسحب.";
+        }
+        else if (path.StartsWith("v1/payouts", StringComparison.OrdinalIgnoreCase))
+        {
+            operation.Summary = "طلب سحب";
+            operation.Description = "إنشاء طلب سحب من الرصيد المتاح.";
+        }
+    }
+
+    private static void EnsureHeader(OpenApiOperation operation, string name, string description, string example)
+    {
+        if (operation.Parameters.Any(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        operation.Parameters.Add(new OpenApiParameter
+        {
+            Name = name,
+            In = ParameterLocation.Header,
+            Required = false,
+            Description = description,
+            Schema = new OpenApiSchema { Type = "string", Example = new OpenApiString(example) }
+        });
+    }
+}

@@ -149,9 +149,10 @@
         <li>{{ $t('docs.tip2') }}</li>
         <li>{{ $t('docs.tip3') }}</li>
         <li>{{ $t('docs.tip4') }}</li>
+        <li>{{ $t('docs.tipSwagger') }}</li>
       </ul>
       <div class="row actions">
-        <a class="btn" :href="swaggerUrl" target="_blank" rel="noopener">Swagger</a>
+        <a class="btn" :href="swaggerUrl" target="_blank" rel="noopener">{{ $t('docs.openApi') }}</a>
         <RouterLink class="btn secondary" to="/merchant/platforms">{{ $t('docs.ctaPlatforms') }}</RouterLink>
         <RouterLink class="btn secondary" to="/merchant/payments">{{ $t('nav.payments') }}</RouterLink>
       </div>
@@ -172,7 +173,7 @@ const platforms = ref([])
 const toast = ref('')
 let timer = null
 
-const swaggerUrl = `${API_BASE}/swagger`
+const swaggerUrl = `${API_BASE}/swagger/index.html?urls.primaryName=${encodeURIComponent('Merchant API')}`
 const approvedPlatforms = computed(() => (platforms.value || []).filter(p => p.status === 'Approved'))
 const sampleDomain = computed(() => approvedPlatforms.value[0]?.domain || 'shop.example.com')
 const sampleKey = 'YOUR_PLATFORM_API_KEY'
@@ -207,18 +208,24 @@ const providers = computed(() => [
   { name: 'SuperQi', desc: t('docs.provSuperQi') }
 ])
 
-const createExample = computed(() => `curl -X POST ${API_BASE}/v1/payments \\
+const createExample = computed(() => {
+  const origin = sampleDomain.value.startsWith('localhost') || sampleDomain.value.startsWith('127.0.0.1')
+    ? `http://${sampleDomain.value}`
+    : `https://${sampleDomain.value}`
+  return `curl -X POST ${API_BASE}/v1/payments \\
   -H "X-Api-Key: ${sampleKey}" \\
   -H "Content-Type: application/json" \\
   -H "X-Idempotency-Key: order-1001" \\
-  -H "Origin: https://${sampleDomain.value}" \\
+  -H "Origin: ${origin}" \\
   -d '{
     "amount": 5000,
     "serviceType": "Monthly subscription",
-    "callbackUrl": "https://${sampleDomain.value}/hooks/fynexpay",
-    "successUrl": "https://${sampleDomain.value}/success",
-    "failureUrl": "https://${sampleDomain.value}/failed"
-  }'`)
+    "orderId": "ORD-1001",
+    "callbackUrl": "${origin}/hooks/fynexpay",
+    "successUrl": "${origin}/success",
+    "failureUrl": "${origin}/failed"
+  }'`
+})
 
 const createResponse = `{
   "id": "5bac8b83-....",

@@ -7,5 +7,6 @@ public enum LedgerEntryType
     PayoutDebit = 3,
     PayoutHold = 4,
     PayoutRelease = 5,
-    Adjustment = 6
+    Adjustment = 6,
+    PaymentRefund = 7
 }

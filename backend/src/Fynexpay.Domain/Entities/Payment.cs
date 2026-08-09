@@ -28,6 +28,7 @@ public class Payment : BaseEntity
     public decimal PlatformFee { get; set; }
     public decimal NetAmount { get; set; }
     public bool LedgerApplied { get; set; }
+    public bool RefundLedgerApplied { get; set; }
     public DateTime? PaidAtUtc { get; set; }
     public DateTime? ExpiredAtUtc { get; set; }
     public string? FailureReason { get; set; }

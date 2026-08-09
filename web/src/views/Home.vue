@@ -9,7 +9,7 @@
         <p class="sub">{{ c.heroSubtitle }}</p>
         <div class="hero-cta">
           <a class="btn primary" :href="dashboardUrl + '/register'">{{ c.ctaMerchant }}</a>
-          <a class="btn ghost" :href="apiUrl + '/swagger'">{{ c.ctaDocs }}</a>
+          <a class="btn ghost" :href="apiUrl + '/swagger/index.html?urls.primaryName=' + encodeURIComponent('Merchant API')">{{ c.ctaDocs }}</a>
         </div>
       </div>
 

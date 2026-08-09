@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Text;
+using Fynexpay.Api.Security;
 using Fynexpay.Application.Abstractions;
 using Fynexpay.Application.Services;
 using Fynexpay.Domain.Enums;
@@ -17,16 +18,29 @@ public class MockCheckoutController : ControllerBase
 {
     private readonly IAppDbContext _db;
     private readonly PaymentService _payments;
+    private readonly IHostEnvironment _env;
+    private readonly IConfiguration _config;
 
-    public MockCheckoutController(IAppDbContext db, PaymentService payments)
+    public MockCheckoutController(
+        IAppDbContext db,
+        PaymentService payments,
+        IHostEnvironment env,
+        IConfiguration config)
     {
         _db = db;
         _payments = payments;
+        _env = env;
+        _config = config;
     }
+
+    private bool Allowed => MockPaymentAccess.IsAllowed(_env, _config);
 
     [HttpGet("/mock-checkout/{paymentId:guid}")]
     public async Task<IActionResult> Page(Guid paymentId, CancellationToken ct)
     {
+        if (!Allowed)
+            return NotFound();
+
         var payment = await _db.Payments.AsNoTracking().FirstOrDefaultAsync(p => p.Id == paymentId, ct);
         if (payment == null)
             return Content(Html("دفعة غير موجودة", "<p>لم يتم العثور على هذه الدفعة.</p>", null), "text/html; charset=utf-8");
@@ -73,6 +87,8 @@ public class MockCheckoutController : ControllerBase
     [HttpPost("/mock-checkout/{paymentId:guid}/pay")]
     public async Task<IActionResult> Pay(Guid paymentId, CancellationToken ct)
     {
+        if (!Allowed) return NotFound();
+
         var payment = await _db.Payments.AsNoTracking().FirstOrDefaultAsync(p => p.Id == paymentId, ct);
         if (payment == null) return NotFound();
 
@@ -92,6 +108,8 @@ public class MockCheckoutController : ControllerBase
     [HttpPost("/mock-checkout/{paymentId:guid}/fail")]
     public async Task<IActionResult> Fail(Guid paymentId, CancellationToken ct)
     {
+        if (!Allowed) return NotFound();
+
         var payment = await _db.Payments.AsNoTracking().FirstOrDefaultAsync(p => p.Id == paymentId, ct);
         if (payment == null) return NotFound();
 

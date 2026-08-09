@@ -1,6 +1,7 @@
 using Fynexpay.Application.Abstractions;
 using Fynexpay.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Fynexpay.Infrastructure.Persistence;
 
@@ -18,6 +19,9 @@ public class AppDbContext : DbContext, IAppDbContext
     public DbSet<PaymentEvent> PaymentEvents => Set<PaymentEvent>();
     public DbSet<PayoutRequest> PayoutRequests => Set<PayoutRequest>();
     public DbSet<PlatformSetting> PlatformSettings => Set<PlatformSetting>();
+
+    public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
+        => Database.BeginTransactionAsync(cancellationToken);
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -41,6 +45,7 @@ public class AppDbContext : DbContext, IAppDbContext
         {
             e.Property(x => x.Name).HasMaxLength(200);
             e.Property(x => x.Domain).HasMaxLength(255);
+            e.Property(x => x.LogoUrl).HasMaxLength(500);
             e.Property(x => x.AdminNotes).HasMaxLength(1000);
             e.Property(x => x.OneTimeApiKey).HasColumnType("longtext");
             e.HasIndex(x => new { x.MerchantId, x.Domain }).IsUnique();
@@ -80,7 +85,8 @@ public class AppDbContext : DbContext, IAppDbContext
             e.Property(x => x.NetAmount).HasPrecision(18, 2);
             e.Property(x => x.MerchantOrderId).HasMaxLength(100);
             e.Property(x => x.IdempotencyKey).HasMaxLength(100);
-            e.HasIndex(x => new { x.MerchantId, x.IdempotencyKey });
+            // MySQL treats NULL ≠ NULL, so multiple payments without an idempotency key remain allowed.
+            e.HasIndex(x => new { x.MerchantId, x.IdempotencyKey }).IsUnique();
             e.HasIndex(x => x.ProviderPaymentId);
             e.HasIndex(x => x.MerchantPlatformId);
             e.Property(x => x.QrCode).HasColumnType("longtext");

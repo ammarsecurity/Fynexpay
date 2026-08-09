@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using Fynexpay.Application.Abstractions;
 using Fynexpay.Application.Abstractions.Payments;
 using Fynexpay.Application.Services;
@@ -7,24 +8,28 @@ using Fynexpay.Domain.Enums;
 using Fynexpay.Infrastructure.Auth;
 using Fynexpay.Infrastructure.Payments;
 using Fynexpay.Infrastructure.Persistence;
+using Fynexpay.Infrastructure.Security;
 using Fynexpay.Infrastructure.Webhooks;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Fynexpay.Infrastructure;
 
 public static class DependencyInjection
 {
+    private static readonly Regex SafeIdent = new("^[A-Za-z0-9_]+$", RegexOptions.Compiled);
+
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<AppOptions>(configuration.GetSection("App"));
         services.Configure<PaymentProvidersOptions>(configuration.GetSection("PaymentProviders"));
 
         var connectionString = configuration.GetConnectionString("Default")
-            ?? "Server=localhost;Port=3306;Database=fynexpay;User=root;Password=root;";
+            ?? throw new InvalidOperationException("ConnectionStrings:Default must be configured.");
 
         services.AddDbContext<AppDbContext>(options =>
             options.UseMySql(connectionString, new MySqlServerVersion(new Version(8, 0, 36))));
@@ -33,6 +38,7 @@ public static class DependencyInjection
         services.AddScoped<IPasswordHasher, PasswordHasher>();
         services.AddScoped<IApiKeyService, ApiKeyService>();
         services.AddScoped<IJwtTokenService, JwtTokenService>();
+        services.AddSingleton<ISecretProtector, SecretProtector>();
         services.AddScoped<IMerchantWebhookSender, MerchantWebhookSender>();
         services.AddScoped<IProviderSettingsService, ProviderSettingsService>();
         services.AddScoped<IPaymentProviderResolver, PaymentProviderResolver>();
@@ -47,7 +53,15 @@ public static class DependencyInjection
         services.AddHttpClient("zaincash");
         services.AddHttpClient("qi");
 
-        var jwtKey = configuration["Jwt:Key"] ?? "FynexpayDevSecretKey_ChangeMe_32chars!!";
+        var jwtKey = configuration["Jwt:Key"];
+        if (string.IsNullOrWhiteSpace(jwtKey) || jwtKey.Length < 32)
+            throw new InvalidOperationException("Jwt:Key must be configured with at least 32 characters (use env var Jwt__Key in production).");
+
+        var envName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
+        if (!string.Equals(envName, "Development", StringComparison.OrdinalIgnoreCase)
+            && jwtKey.Contains("DevOnly", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Jwt:Key must not use the Development placeholder in non-Development environments.");
+
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
             {
@@ -59,7 +73,8 @@ public static class DependencyInjection
                     ValidateIssuerSigningKey = true,
                     ValidIssuer = configuration["Jwt:Issuer"] ?? "Fynexpay",
                     ValidAudience = configuration["Jwt:Audience"] ?? "Fynexpay",
-                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+                    ClockSkew = TimeSpan.FromMinutes(1)
                 };
             });
 
@@ -67,21 +82,31 @@ public static class DependencyInjection
         return services;
     }
 
-    public static async Task SeedAsync(IServiceProvider services)
+    public static async Task SeedAsync(IServiceProvider services, IHostEnvironment env)
     {
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
         await db.Database.EnsureCreatedAsync();
         await EnsureSchemaAsync(db);
+
+        // Never seed a well-known admin outside Development.
+        if (!env.IsDevelopment())
+            return;
+
+        var adminPassword = configuration["Seed:AdminPassword"];
+        if (string.IsNullOrWhiteSpace(adminPassword))
+            return;
 
         if (!await db.Users.AnyAsync(u => u.Role == UserRole.Admin))
         {
             var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
+            var email = (configuration["Seed:AdminEmail"] ?? "admin@fynexpay.iq").Trim().ToLowerInvariant();
             db.Users.Add(new User
             {
-                Email = "admin@fynexpay.iq",
+                Email = email,
                 FullName = "مدير المنصة",
-                PasswordHash = hasher.Hash("Admin@12345"),
+                PasswordHash = hasher.Hash(adminPassword),
                 Role = UserRole.Admin,
                 IsActive = true
             });
@@ -96,9 +121,11 @@ public static class DependencyInjection
         await EnsureColumnAsync(db, "Merchants", "QiEnabled", "TINYINT(1) NOT NULL DEFAULT 1");
         await EnsureColumnAsync(db, "Merchants", "SuperQiEnabled", "TINYINT(1) NOT NULL DEFAULT 1");
         await EnsureColumnAsync(db, "Payments", "ProviderCheckoutUrl", "longtext NULL");
+        await EnsureColumnAsync(db, "Payments", "RefundLedgerApplied", "TINYINT(1) NOT NULL DEFAULT 0");
         await EnsureMerchantPlatformsTableAsync(db);
         await EnsureColumnAsync(db, "ApiKeys", "MerchantPlatformId", "char(36) NULL");
         await EnsureColumnAsync(db, "Payments", "MerchantPlatformId", "char(36) NULL");
+        await EnsureColumnAsync(db, "MerchantPlatforms", "LogoUrl", "varchar(500) NULL");
     }
 
     private static async Task EnsureMerchantPlatformsTableAsync(AppDbContext db)
@@ -138,6 +165,13 @@ public static class DependencyInjection
 
     private static async Task EnsureColumnAsync(AppDbContext db, string table, string column, string definition)
     {
+        if (!SafeIdent.IsMatch(table) || !SafeIdent.IsMatch(column))
+            throw new InvalidOperationException("Invalid schema identifier");
+
+        // Allow only a constrained DDL definition alphabet (no user input reaches here).
+        if (!Regex.IsMatch(definition, @"^[A-Za-z0-9_\(\)\s,]+$"))
+            throw new InvalidOperationException("Invalid column definition");
+
         var conn = db.Database.GetDbConnection();
         if (conn.State != System.Data.ConnectionState.Open)
             await conn.OpenAsync();

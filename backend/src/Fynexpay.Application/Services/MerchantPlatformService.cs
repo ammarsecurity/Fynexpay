@@ -10,11 +10,13 @@ public class MerchantPlatformService
 {
     private readonly IAppDbContext _db;
     private readonly IApiKeyService _apiKeys;
+    private readonly ISecretProtector _protector;
 
-    public MerchantPlatformService(IAppDbContext db, IApiKeyService apiKeys)
+    public MerchantPlatformService(IAppDbContext db, IApiKeyService apiKeys, ISecretProtector protector)
     {
         _db = db;
         _apiKeys = apiKeys;
+        _protector = protector;
     }
 
     public async Task<IReadOnlyList<MerchantPlatformDto>> ListForMerchantAsync(Guid merchantId, CancellationToken ct = default)
@@ -198,6 +200,36 @@ public class MerchantPlatformService
         return dto with { OneTimeApiKey = plain, HasOneTimeApiKey = true };
     }
 
+    public async Task<MerchantPlatformDto> SetLogoAsync(
+        Guid merchantId,
+        Guid platformId,
+        string logoUrl,
+        CancellationToken ct = default)
+    {
+        var platform = await _db.MerchantPlatforms
+            .Include(p => p.ApiKey)
+            .FirstOrDefaultAsync(p => p.Id == platformId && p.MerchantId == merchantId, ct)
+            ?? throw new InvalidOperationException("المنصة غير موجودة");
+
+        platform.LogoUrl = logoUrl;
+        platform.UpdatedAtUtc = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return Map(platform);
+    }
+
+    public async Task<MerchantPlatformDto> ClearLogoAsync(Guid merchantId, Guid platformId, CancellationToken ct = default)
+    {
+        var platform = await _db.MerchantPlatforms
+            .Include(p => p.ApiKey)
+            .FirstOrDefaultAsync(p => p.Id == platformId && p.MerchantId == merchantId, ct)
+            ?? throw new InvalidOperationException("المنصة غير موجودة");
+
+        platform.LogoUrl = null;
+        platform.UpdatedAtUtc = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return Map(platform);
+    }
+
     public async Task<string> ClaimKeyAsync(Guid merchantId, Guid platformId, CancellationToken ct = default)
     {
         var platform = await _db.MerchantPlatforms
@@ -207,7 +239,7 @@ public class MerchantPlatformService
         if (string.IsNullOrWhiteSpace(platform.OneTimeApiKey))
             throw new InvalidOperationException("لا يوجد مفتاح جاهز للاستلام. أعد توليد المفتاح إن لزم.");
 
-        var key = platform.OneTimeApiKey;
+        var key = _protector.Unprotect(platform.OneTimeApiKey);
         platform.OneTimeApiKey = null;
         platform.UpdatedAtUtc = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
@@ -245,7 +277,7 @@ public class MerchantPlatformService
         };
         _db.ApiKeys.Add(entity);
         platform.ApiKey = entity;
-        platform.OneTimeApiKey = plain;
+        platform.OneTimeApiKey = _protector.Protect(plain);
         return Task.FromResult(plain);
     }
 
@@ -255,6 +287,7 @@ public class MerchantPlatformService
         includeMerchantName ? p.Merchant?.BusinessName : null,
         p.Name,
         p.Domain,
+        p.LogoUrl,
         p.Status.ToString(),
         p.AdminNotes,
         p.CreatedAtUtc,

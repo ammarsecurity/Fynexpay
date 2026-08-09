@@ -10,12 +10,14 @@ public class MerchantPlatform : BaseEntity
     public string Name { get; set; } = string.Empty;
     /// <summary>Normalized host only, e.g. shop.example.com</summary>
     public string Domain { get; set; } = string.Empty;
+    /// <summary>Public URL to a 500×500 transparent PNG logo.</summary>
+    public string? LogoUrl { get; set; }
     public PlatformStatus Status { get; set; } = PlatformStatus.Pending;
     public string? AdminNotes { get; set; }
     public DateTime? ReviewedAtUtc { get; set; }
     public Guid? ReviewedByUserId { get; set; }
 
-    /// <summary>Plain API key shown once to the merchant after approve/regenerate; cleared after claim.</summary>
+    /// <summary>Encrypted one-time API key (AES-GCM); cleared after claim. Never store plaintext.</summary>
     public string? OneTimeApiKey { get; set; }
 
     public ApiKey? ApiKey { get; set; }

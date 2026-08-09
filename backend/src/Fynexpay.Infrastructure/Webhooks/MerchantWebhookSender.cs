@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Fynexpay.Application.Abstractions;
-using Fynexpay.Application.DTOs;
+using Fynexpay.Application.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -23,11 +23,28 @@ public class MerchantWebhookSender : IMerchantWebhookSender
 
     public async Task SendPaymentUpdateAsync(Guid paymentId, CancellationToken ct = default)
     {
-        var payment = await _db.Payments.Include(p => p.Merchant)
+        var payment = await _db.Payments
+            .Include(p => p.Merchant)
+            .Include(p => p.MerchantPlatform)
             .FirstOrDefaultAsync(p => p.Id == paymentId, ct);
         if (payment == null || string.IsNullOrWhiteSpace(payment.CallbackUrl))
             return;
 
+        var platformDomain = payment.MerchantPlatform?.Domain;
+        if (!UrlSafety.IsSafeCallbackTarget(payment.CallbackUrl, platformDomain))
+        {
+            _logger.LogWarning("Blocked unsafe merchant callback URL for payment {PaymentId}", paymentId);
+            return;
+        }
+
+        if (platformDomain != null
+            && !UrlSafety.IsSafeRedirectUrl(payment.CallbackUrl, platformDomain))
+        {
+            _logger.LogWarning("Blocked callback URL outside platform domain for payment {PaymentId}", paymentId);
+            return;
+        }
+
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
         var payload = JsonSerializer.Serialize(new
         {
             id = payment.Id,
@@ -48,6 +65,7 @@ public class MerchantWebhookSender : IMerchantWebhookSender
             Content = new StringContent(payload, Encoding.UTF8, "application/json")
         };
         request.Headers.Add("X-Fynexpay-Signature", signature);
+        request.Headers.Add("X-Fynexpay-Timestamp", timestamp);
         request.Headers.Add("X-Fynexpay-Event", "payment.updated");
 
         try

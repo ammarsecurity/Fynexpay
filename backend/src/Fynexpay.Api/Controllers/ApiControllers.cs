@@ -1,13 +1,16 @@
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using Fynexpay.Api.Security;
 using Fynexpay.Application.Abstractions;
 using Fynexpay.Application.Abstractions.Payments;
 using Fynexpay.Application.DTOs;
+using Fynexpay.Application.Security;
 using Fynexpay.Application.Services;
 using Fynexpay.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace Fynexpay.Api.Controllers;
@@ -15,6 +18,7 @@ namespace Fynexpay.Api.Controllers;
 [ApiController]
 [Route("api/auth")]
 [Tags("Dashboard Auth")]
+[EnableRateLimiting("auth")]
 public class AuthController : ControllerBase
 {
     private readonly AuthService _auth;
@@ -26,6 +30,7 @@ public class AuthController : ControllerBase
     public async Task<ActionResult<AuthResponse>> Register([FromBody] RegisterMerchantRequest request, CancellationToken ct)
     {
         try { return Ok(await _auth.RegisterMerchantAsync(request, ct)); }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
         catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
     }
 
@@ -34,6 +39,7 @@ public class AuthController : ControllerBase
     public async Task<ActionResult<AuthResponse>> Login([FromBody] LoginRequest request, CancellationToken ct)
     {
         try { return Ok(await _auth.LoginAsync(request, ct)); }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
         catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
     }
 }
@@ -68,6 +74,13 @@ public class MerchantDashboardController : ControllerBase
     }
 
     private Guid MerchantId => Guid.Parse(User.FindFirstValue("merchant_id")!);
+
+    private async Task EnsureActiveMerchantAsync(CancellationToken ct)
+    {
+        var me = await _merchants.GetMerchantAsync(MerchantId, ct);
+        if (!string.Equals(me.Status, MerchantStatus.Active.ToString(), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("حساب التاجر غير مفعّل بعد");
+    }
 
     [HttpGet("me")]
     public async Task<ActionResult<MerchantDto>> Me(CancellationToken ct) => Ok(await _merchants.GetMerchantAsync(MerchantId, ct));
@@ -122,6 +135,7 @@ public class MerchantDashboardController : ControllerBase
     {
         try
         {
+            await EnsureActiveMerchantAsync(ct);
             if (request.MerchantPlatformId is null)
                 return BadRequest(new { message = "اختر منصة معتمدة لإنشاء دفعة تجريبية" });
             var idem = $"dashboard-test-{Guid.NewGuid():N}";
@@ -141,8 +155,18 @@ public class MerchantDashboardController : ControllerBase
     }
 
     [HttpPost("test-payments/{id:guid}/mock-complete")]
-    public async Task<ActionResult<PaymentDto>> MockCompleteTestPayment(Guid id, CancellationToken ct)
+    public async Task<ActionResult<PaymentDto>> MockCompleteTestPayment(
+        Guid id,
+        [FromServices] IHostEnvironment env,
+        [FromServices] IConfiguration config,
+        CancellationToken ct)
     {
+        if (!MockPaymentAccess.IsAllowed(env, config))
+            return NotFound();
+
+        try { await EnsureActiveMerchantAsync(ct); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+
         var existing = await _payments.GetAsync(MerchantId, id, ct);
         if (existing == null) return NotFound();
 
@@ -202,6 +226,74 @@ public class MerchantDashboardController : ControllerBase
     public async Task<ActionResult<object>> ClaimPlatformKey(Guid id, CancellationToken ct)
     {
         try { return Ok(new { apiKey = await _platforms.ClaimKeyAsync(MerchantId, id, ct) }); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        { return BadRequest(new { message = ex.Message }); }
+    }
+
+    [HttpPost("platforms/{id:guid}/logo")]
+    [RequestSizeLimit(2_000_000)]
+    public async Task<ActionResult<MerchantPlatformDto>> UploadPlatformLogo(Guid id, IFormFile file, CancellationToken ct)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { message = "لم يتم رفع ملف" });
+
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (ext != ".png")
+            return BadRequest(new { message = "الشعار يجب أن يكون PNG فقط — مقاس 500×500 بخلفية شفافة" });
+
+        await using var ms = new MemoryStream();
+        await file.CopyToAsync(ms, ct);
+        var bytes = ms.ToArray();
+        try
+        {
+            PlatformLogoValidator.Validate(bytes);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+
+        var uploadsDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "platforms");
+        Directory.CreateDirectory(uploadsDir);
+
+        // Remove previous file for this platform if present under our uploads folder.
+        var existing = (await _platforms.ListForMerchantAsync(MerchantId, ct)).FirstOrDefault(p => p.Id == id);
+        if (existing?.LogoUrl is { } oldUrl && oldUrl.StartsWith("/uploads/platforms/", StringComparison.OrdinalIgnoreCase))
+        {
+            var oldName = Path.GetFileName(oldUrl.Split('?', 2)[0]);
+            var oldPath = Path.Combine(uploadsDir, oldName);
+            if (System.IO.File.Exists(oldPath))
+                System.IO.File.Delete(oldPath);
+        }
+
+        var fileName = $"{id:N}-{Guid.NewGuid():N}.png";
+        var fullPath = Path.Combine(uploadsDir, fileName);
+        await System.IO.File.WriteAllBytesAsync(fullPath, bytes, ct);
+        var logoUrl = $"/uploads/platforms/{fileName}?v={DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
+
+        try { return Ok(await _platforms.SetLogoAsync(MerchantId, id, logoUrl, ct)); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        { return BadRequest(new { message = ex.Message }); }
+    }
+
+    [HttpDelete("platforms/{id:guid}/logo")]
+    public async Task<ActionResult<MerchantPlatformDto>> RemovePlatformLogo(Guid id, CancellationToken ct)
+    {
+        try
+        {
+            var list = await _platforms.ListForMerchantAsync(MerchantId, ct);
+            var existing = list.FirstOrDefault(p => p.Id == id);
+            if (existing?.LogoUrl is { } oldUrl && oldUrl.StartsWith("/uploads/platforms/", StringComparison.OrdinalIgnoreCase))
+            {
+                var uploadsDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "platforms");
+                var oldName = Path.GetFileName(oldUrl.Split('?', 2)[0]);
+                var oldPath = Path.Combine(uploadsDir, oldName);
+                if (System.IO.File.Exists(oldPath))
+                    System.IO.File.Delete(oldPath);
+            }
+
+            return Ok(await _platforms.ClearLogoAsync(MerchantId, id, ct));
+        }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         { return BadRequest(new { message = ex.Message }); }
     }
@@ -270,7 +362,11 @@ public class MerchantDashboardController : ControllerBase
     [HttpPost("payouts")]
     public async Task<ActionResult<PayoutDto>> CreatePayout([FromBody] CreatePayoutRequest request, CancellationToken ct)
     {
-        try { return Ok(await _payouts.CreateAsync(MerchantId, request, ct)); }
+        try
+        {
+            await EnsureActiveMerchantAsync(ct);
+            return Ok(await _payouts.CreateAsync(MerchantId, request, ct));
+        }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         { return BadRequest(new { message = ex.Message }); }
     }
@@ -502,7 +598,10 @@ public class AdminController : ControllerBase
 
     [HttpPost("providers/load-demo")]
     public async Task<ActionResult<ProviderRuntimeSettings>> LoadDemo(CancellationToken ct)
-        => Ok(await _providerSettings.LoadOfficialSandboxDemoAsync(ct));
+    {
+        try { return Ok(await _providerSettings.LoadOfficialSandboxDemoAsync(ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+    }
 
     [HttpGet("landing")]
     public async Task<ActionResult<LandingContentDto>> GetLanding(CancellationToken ct)
@@ -524,8 +623,14 @@ public class AdminController : ControllerBase
             return BadRequest(new { message = "No file uploaded" });
 
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        if (ext is not (".png" or ".jpg" or ".jpeg" or ".webp" or ".svg"))
-            return BadRequest(new { message = "Allowed: png, jpg, jpeg, webp, svg" });
+        if (ext is not (".png" or ".jpg" or ".jpeg" or ".webp"))
+            return BadRequest(new { message = "Allowed: png, jpg, jpeg, webp (SVG disabled for security)" });
+
+        await using var ms = new MemoryStream();
+        await file.CopyToAsync(ms, ct);
+        var bytes = ms.ToArray();
+        if (!LooksLikeImage(bytes.AsSpan(0, Math.Min(bytes.Length, 12)), ext))
+            return BadRequest(new { message = "File content does not match an allowed image type" });
 
         var settings = await _providerSettings.GetAsync(ct);
         var bundle = ResolveBundle(settings, key);
@@ -535,13 +640,26 @@ public class AdminController : ControllerBase
         var uploadsDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "providers");
         Directory.CreateDirectory(uploadsDir);
         var safeKey = key.Trim().ToLowerInvariant();
-        var fileName = $"{safeKey}{ext}";
+        var fileName = $"{safeKey}-{Guid.NewGuid():N}{ext}";
         var fullPath = Path.Combine(uploadsDir, fileName);
-        await using (var stream = System.IO.File.Create(fullPath))
-            await file.CopyToAsync(stream, ct);
+        await System.IO.File.WriteAllBytesAsync(fullPath, bytes, ct);
 
         bundle.LogoUrl = $"/uploads/providers/{fileName}?v={DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
         return Ok(await _providerSettings.SaveAsync(settings, ct));
+    }
+
+    private static bool LooksLikeImage(ReadOnlySpan<byte> header, string ext)
+    {
+        if (header.Length < 3) return false;
+        if (ext is ".png")
+            return header.Length >= 8 && header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47;
+        if (ext is ".jpg" or ".jpeg")
+            return header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF;
+        if (ext is ".webp")
+            return header.Length >= 12
+                   && header[0] == (byte)'R' && header[1] == (byte)'I' && header[2] == (byte)'F' && header[3] == (byte)'F'
+                   && header[8] == (byte)'W' && header[9] == (byte)'E' && header[10] == (byte)'B' && header[11] == (byte)'P';
+        return false;
     }
 
     [HttpDelete("providers/{key}/logo")]
@@ -600,7 +718,9 @@ public record SetProviderEnvironmentRequest(string Environment);
 
 [ApiController]
 [Route("v1")]
-[Tags("Merchant Public API")]
+[Tags("Merchant API")]
+[ApiExplorerSettings(GroupName = "merchant")]
+[EnableRateLimiting("api-keys")]
 public class MerchantPublicApiController : ControllerBase
 {
     private readonly PaymentService _payments;
@@ -617,11 +737,22 @@ public class MerchantPublicApiController : ControllerBase
     private Guid MerchantId => (Guid)HttpContext.Items["MerchantId"]!;
 
     [HttpPost("payments")]
-    public async Task<ActionResult<PaymentDto>> CreatePayment([FromBody] CreatePaymentRequest request, CancellationToken ct)
+    public async Task<ActionResult<PaymentDto>> CreatePayment([FromBody] CreatePublicPaymentRequest request, CancellationToken ct)
     {
         var idem = Request.Headers["X-Idempotency-Key"].FirstOrDefault();
         var platformId = HttpContext.Items.TryGetValue("MerchantPlatformId", out var pid) && pid is Guid g ? g : (Guid?)null;
-        try { return Ok(await _payments.CreateAsync(MerchantId, request, idem, ct, platformId)); }
+        var mapped = new CreatePaymentRequest(
+            request.Amount,
+            request.Currency,
+            request.OrderId,
+            request.ServiceType,
+            request.ServiceType,
+            null,
+            request.SuccessUrl,
+            request.FailureUrl,
+            request.CallbackUrl,
+            null);
+        try { return Ok(await _payments.CreateAsync(MerchantId, mapped, idem, ct, platformId)); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         { return BadRequest(new { message = ex.Message }); }
     }
@@ -656,15 +787,24 @@ public class MerchantPublicApiController : ControllerBase
 [Route("api/webhooks")]
 [AllowAnonymous]
 [Tags("Provider Webhooks")]
+[EnableRateLimiting("webhooks")]
 public class WebhooksController : ControllerBase
 {
     private readonly IPaymentProviderResolver _resolver;
     private readonly PaymentService _payments;
+    private readonly IHostEnvironment _env;
+    private readonly IConfiguration _config;
 
-    public WebhooksController(IPaymentProviderResolver resolver, PaymentService payments)
+    public WebhooksController(
+        IPaymentProviderResolver resolver,
+        PaymentService payments,
+        IHostEnvironment env,
+        IConfiguration config)
     {
         _resolver = resolver;
         _payments = payments;
+        _env = env;
+        _config = config;
     }
 
     [HttpPost("{provider}")]
@@ -673,6 +813,9 @@ public class WebhooksController : ControllerBase
         if (!Enum.TryParse<PaymentProviderType>(provider, true, out var type) || type == PaymentProviderType.Auto)
             return BadRequest();
 
+        if (string.Equals(provider, "mock", StringComparison.OrdinalIgnoreCase))
+            return NotFound();
+
         using var reader = new StreamReader(Request.Body, Encoding.UTF8);
         var payload = await reader.ReadToEndAsync(ct);
         var headers = Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString(), StringComparer.OrdinalIgnoreCase);
@@ -680,19 +823,47 @@ public class WebhooksController : ControllerBase
         var providerImpl = _resolver.Resolve(type);
         var result = await providerImpl.HandleWebhookAsync(payload, headers, ct);
         if (result == null)
-            return Ok(new { received = true });
+            return Unauthorized(new { received = false, reason = "invalid_signature_or_payload" });
+
+        // Defense in depth: confirm non-pending statuses with the provider API before mutating ledger.
+        var statusToApply = result.Status;
+        if (statusToApply != PaymentStatus.Pending && !string.IsNullOrWhiteSpace(result.ProviderPaymentId))
+        {
+            try
+            {
+                var live = await providerImpl.GetStatusAsync(result.ProviderPaymentId, ct);
+                if (live.Status == PaymentStatus.Pending && statusToApply == PaymentStatus.Paid)
+                    return Ok(new { received = true, applied = false, reason = "provider_status_unconfirmed" });
+                if (live.Status != PaymentStatus.Pending)
+                    statusToApply = live.Status;
+            }
+            catch
+            {
+                if (statusToApply == PaymentStatus.Paid)
+                    return Ok(new { received = true, applied = false, reason = "provider_status_check_failed" });
+            }
+        }
 
         if (result.PaymentId.HasValue)
-            await _payments.ApplyProviderStatusAsync(result.PaymentId.Value, result.Status, type.ToString(), result.RawPayload, ct: ct);
+            await _payments.ApplyProviderStatusAsync(result.PaymentId.Value, statusToApply, type.ToString(), result.RawPayload, ct: ct);
         else if (!string.IsNullOrWhiteSpace(result.ProviderPaymentId))
-            await _payments.ApplyByProviderPaymentIdAsync(result.ProviderPaymentId, type, result.Status, result.RawPayload, ct: ct);
+            await _payments.ApplyByProviderPaymentIdAsync(result.ProviderPaymentId, type, statusToApply, result.RawPayload, ct: ct);
 
-        return Ok(new { received = true });
+        return Ok(new { received = true, applied = true });
     }
 
     [HttpPost("mock/complete/{paymentId:guid}")]
     public async Task<IActionResult> MockComplete(Guid paymentId, CancellationToken ct)
     {
+        if (!MockPaymentAccess.IsAllowed(_env, _config))
+            return NotFound();
+
+        var expected = _config["Security:MockWebhookSecret"];
+        if (string.IsNullOrWhiteSpace(expected)
+            || !Request.Headers.TryGetValue("X-Mock-Webhook-Secret", out var provided)
+            || !string.Equals(expected, provided.ToString(), StringComparison.Ordinal))
+            return Unauthorized();
+
         await _payments.ApplyProviderStatusAsync(paymentId, PaymentStatus.Paid, "Mock", JsonSerializer.Serialize(new { paymentId, status = "Paid" }), ct: ct);
         return Ok(new { completed = true, paymentId });
     }

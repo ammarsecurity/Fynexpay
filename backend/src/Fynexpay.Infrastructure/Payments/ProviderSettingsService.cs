@@ -4,6 +4,7 @@ using Fynexpay.Application.Abstractions.Payments;
 using Fynexpay.Domain.Entities;
 using Fynexpay.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Fynexpay.Infrastructure.Payments;
@@ -19,12 +20,17 @@ public class ProviderSettingsService : IProviderSettingsService
 
     private readonly IAppDbContext _db;
     private readonly IOptions<PaymentProvidersOptions> _bootstrap;
+    private readonly IHostEnvironment _env;
     private ProviderRuntimeSettings? _cache;
 
-    public ProviderSettingsService(IAppDbContext db, IOptions<PaymentProvidersOptions> bootstrap)
+    public ProviderSettingsService(
+        IAppDbContext db,
+        IOptions<PaymentProvidersOptions> bootstrap,
+        IHostEnvironment env)
     {
         _db = db;
         _bootstrap = bootstrap;
+        _env = env;
     }
 
     public async Task<ProviderRuntimeSettings> GetAsync(CancellationToken ct = default)
@@ -78,6 +84,9 @@ public class ProviderSettingsService : IProviderSettingsService
 
     public async Task<ProviderRuntimeSettings> LoadOfficialSandboxDemoAsync(CancellationToken ct = default)
     {
+        if (!_env.IsDevelopment())
+            throw new InvalidOperationException("تحميل بيانات الـ sandbox مسموح في بيئة التطوير فقط");
+
         var settings = await GetAsync(ct);
         ApplyOfficialSandboxDemo(settings);
         return await SaveAsync(settings, ct);
@@ -97,11 +106,18 @@ public class ProviderSettingsService : IProviderSettingsService
         settings.Qi.Enabled = true;
         settings.Qi.Priority = 0;
         settings.Qi.LogoUrl = qiLogo;
+        // Public Qi Gate UAT credentials (official docs) — Development only via this action.
+        settings.Qi.Test.Username = "paymentgatewaytest";
+        settings.Qi.Test.Password = "WHaNFE5C3qlChqNbAzH4";
+        settings.Qi.Test.TerminalId = "237984";
 
         settings.SuperQi = ProviderBundleSettings.DefaultSuperQi();
         settings.SuperQi.Enabled = true;
         settings.SuperQi.Priority = 3;
         settings.SuperQi.LogoUrl = superQiLogo;
+        settings.SuperQi.Test.Username = "paymentgatewaytest";
+        settings.SuperQi.Test.Password = "WHaNFE5C3qlChqNbAzH4";
+        settings.SuperQi.Test.TerminalId = "237984";
 
         settings.ZainCash = ProviderBundleSettings.DefaultZainCash();
         settings.ZainCash.Enabled = true;

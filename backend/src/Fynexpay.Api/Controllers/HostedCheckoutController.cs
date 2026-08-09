@@ -3,6 +3,7 @@ using System.Net;
 using System.Text;
 using Fynexpay.Application.Abstractions;
 using Fynexpay.Application.Abstractions.Payments;
+using Fynexpay.Application.Security;
 using Fynexpay.Application.Services;
 using Fynexpay.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
@@ -33,6 +34,7 @@ public class HostedCheckoutController : ControllerBase
         var lang = ResolveLang();
         var payment = await _db.Payments.AsNoTracking()
             .Include(p => p.Merchant)
+            .Include(p => p.MerchantPlatform)
             .FirstOrDefaultAsync(p => p.Id == paymentId, ct);
 
         if (payment == null)
@@ -125,12 +127,11 @@ public class HostedCheckoutController : ControllerBase
         var lang = ResolveLang();
         var payment = await _db.Payments
             .Include(p => p.Merchant)
+            .Include(p => p.MerchantPlatform)
             .FirstOrDefaultAsync(p => p.Id == paymentId, ct);
 
         if (payment == null)
             return Content(Render(T(lang, "دفعة غير موجودة", "Payment not found"), EmptyState(T(lang, "لم يتم العثور على رابط الدفع.", "Payment link was not found."), lang), null, lang), "text/html; charset=utf-8");
-
-        var wantsSuccess = string.Equals(result, "success", StringComparison.OrdinalIgnoreCase);
 
         if (payment.Status == PaymentStatus.Pending &&
             payment.Provider != PaymentProviderType.Auto &&
@@ -139,19 +140,20 @@ public class HostedCheckoutController : ControllerBase
             try
             {
                 await _payments.SyncFromProviderAsync(payment.Id, ct);
-                payment = await _db.Payments.Include(p => p.Merchant)
+                payment = await _db.Payments.Include(p => p.Merchant).Include(p => p.MerchantPlatform)
                     .FirstAsync(p => p.Id == paymentId, ct);
             }
             catch
             {
+                // keep current payment row
             }
         }
 
-        var success = payment.Status == PaymentStatus.Paid ||
-                      (wantsSuccess && payment.Status is PaymentStatus.Pending);
+        // Never trust ?result=success — only server-side Paid status counts.
+        var success = payment.Status == PaymentStatus.Paid;
         var html = ReturnState(payment, success: success, autoRedirect: true, lang);
         var title = success ? T(lang, "تم الدفع", "Paid") : T(lang, "نتيجة الدفع", "Payment result");
-        return Content(Render(title, Shell(payment, html, false, lang), success ? "Paid" : "Failed", lang), "text/html; charset=utf-8");
+        return Content(Render(title, Shell(payment, html, false, lang), success ? "Paid" : payment.Status.ToString(), lang), "text/html; charset=utf-8");
     }
 
     [HttpPost("/checkout/{paymentId:guid}/pay")]
@@ -205,6 +207,9 @@ public class HostedCheckoutController : ControllerBase
               </div>
 
               <div class="brand-lockup">
+                {(payment.MerchantPlatform != null && !string.IsNullOrWhiteSpace(payment.MerchantPlatform.LogoUrl)
+                    ? $"""<img class="platform-logo" src="{H(payment.MerchantPlatform.LogoUrl)}" alt="{H(payment.MerchantPlatform.Name)}" width="56" height="56" />"""
+                    : "")}
                 <img class="brand-logo" src="/full-logo.png" alt="Fynexpay" width="180" height="41" />
               </div>
 
@@ -316,17 +321,27 @@ public class HostedCheckoutController : ControllerBase
 
     private static string? ResolveMerchantReturnUrl(Domain.Entities.Payment payment, bool success)
     {
+        var domain = payment.MerchantPlatform?.Domain;
+        string? candidate;
         if (success)
-            return string.IsNullOrWhiteSpace(payment.SuccessUrl) ? null : payment.SuccessUrl;
+            candidate = string.IsNullOrWhiteSpace(payment.SuccessUrl) ? null : payment.SuccessUrl;
+        else if (!string.IsNullOrWhiteSpace(payment.FailureUrl))
+            candidate = payment.FailureUrl;
+        else if (!string.IsNullOrWhiteSpace(payment.SuccessUrl))
+        {
+            var sep = payment.SuccessUrl.Contains('?', StringComparison.Ordinal) ? "&" : "?";
+            candidate = $"{payment.SuccessUrl}{sep}fynexpay_status=failed";
+        }
+        else
+            candidate = null;
 
-        if (!string.IsNullOrWhiteSpace(payment.FailureUrl))
-            return payment.FailureUrl;
-
-        if (string.IsNullOrWhiteSpace(payment.SuccessUrl))
+        if (candidate == null)
             return null;
 
-        var sep = payment.SuccessUrl.Contains('?', StringComparison.Ordinal) ? "&" : "?";
-        return $"{payment.SuccessUrl}{sep}fynexpay_status=failed";
+        if (string.IsNullOrWhiteSpace(domain) || !UrlSafety.IsSafeRedirectUrl(candidate, domain))
+            return null;
+
+        return candidate;
     }
 
     private static string DisplayName(PaymentProviderType p) => p switch
@@ -486,7 +501,11 @@ public class HostedCheckoutController : ControllerBase
                 .lang:hover{color:var(--brand);border-color:rgba(108,60,236,.3)}
                 .lang-caret{font-size:.7rem;opacity:.7}
                 .brand-lockup{
-                  display:flex;align-items:center;justify-content:center;margin:8px 0 18px;
+                  display:flex;align-items:center;justify-content:center;gap:14px;margin:8px 0 18px;flex-wrap:wrap;
+                }
+                .platform-logo{
+                  display:block;width:56px;height:56px;object-fit:contain;
+                  background:transparent;border:0;
                 }
                 .brand-logo{
                   display:block;height:40px;width:auto;max-width:min(220px,70vw);

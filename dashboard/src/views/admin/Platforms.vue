@@ -21,6 +21,10 @@
       <p v-if="!items.length" class="muted">{{ $t('common.noResults') }}</p>
       <div v-else class="list">
         <article v-for="p in items" :key="p.id" class="item">
+          <div class="logo-frame" :class="{ empty: !p.logoUrl }">
+            <img v-if="p.logoUrl" :src="logoSrc(p.logoUrl)" :alt="p.name" width="56" height="56" />
+            <span v-else class="logo-ph">—</span>
+          </div>
           <div class="main">
             <div class="title-row">
               <strong>{{ p.name }}</strong>
@@ -53,7 +57,7 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { api } from '../../api'
+import { api, API_BASE } from '../../api'
 import DataToolbar from '../../components/DataToolbar.vue'
 
 const { t, locale } = useI18n()
@@ -72,6 +76,11 @@ function statusClass(s) {
 function when(v) {
   if (!v) return '—'
   return new Date(v).toLocaleString(locale.value === 'ar' ? 'ar-IQ' : 'en-GB')
+}
+function logoSrc(url) {
+  if (!url) return ''
+  if (url.startsWith('http')) return url
+  return `${API_BASE}${url}`
 }
 
 async function load() {
@@ -132,7 +141,30 @@ onMounted(load)
   border-radius: 16px;
   background: #fafbff;
   flex-wrap: wrap;
+  align-items: flex-start;
 }
+.logo-frame {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  background:
+    linear-gradient(45deg, #eceff5 25%, transparent 25%),
+    linear-gradient(-45deg, #eceff5 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #eceff5 75%),
+    linear-gradient(-45deg, transparent 75%, #eceff5 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+  background-color: #fff;
+}
+.logo-frame.empty { background: #eef1f8; }
+.logo-frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.logo-ph { color: var(--muted); font-size: 0.85rem; }
+.main { flex: 1; min-width: 220px; }
 .title-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; font-size: 0.85rem; }
 .notes-field { margin: 10px 0 0; max-width: 420px; }

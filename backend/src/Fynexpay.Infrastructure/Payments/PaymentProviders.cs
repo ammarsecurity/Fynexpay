@@ -14,7 +14,7 @@ public class PaymentProvidersOptions
     public FibOptions Fib { get; set; } = new();
     public ZainCashOptions ZainCash { get; set; } = new();
     public QiOptions Qi { get; set; } = new();
-    public bool UseMockWhenMissingCredentials { get; set; } = true;
+    public bool UseMockWhenMissingCredentials { get; set; } = false;
 }
 
 public class FibOptions
@@ -140,28 +140,8 @@ public class MockPaymentProvider : IPaymentProvider
 
     public Task<ProviderWebhookResult?> HandleWebhookAsync(string payload, IDictionary<string, string> headers, CancellationToken ct = default)
     {
-        using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(payload) ? "{}" : payload);
-        var root = doc.RootElement;
-        Guid? paymentId = null;
-        string? providerId = null;
-        var status = PaymentStatus.Paid;
-
-        if (root.TryGetProperty("id", out var idProp) && Guid.TryParse(idProp.GetString(), out var pid))
-            paymentId = pid;
-        if (root.TryGetProperty("paymentId", out var pp) && Guid.TryParse(pp.GetString(), out var pid2))
-            paymentId = pid2;
-        if (root.TryGetProperty("providerPaymentId", out var prid))
-            providerId = prid.GetString();
-        if (root.TryGetProperty("status", out var st) && Enum.TryParse<PaymentStatus>(st.GetString(), true, out var parsed))
-            status = parsed;
-
-        return Task.FromResult<ProviderWebhookResult?>(new ProviderWebhookResult
-        {
-            PaymentId = paymentId,
-            ProviderPaymentId = providerId,
-            Status = status,
-            RawPayload = payload
-        });
+        // Mock inbound webhooks are disabled — use Development mock-checkout only.
+        return Task.FromResult<ProviderWebhookResult?>(null);
     }
 }
 
@@ -272,8 +252,12 @@ public class FibPaymentProvider : HttpPaymentProviderBase, IPaymentProvider
         return response.IsSuccessStatusCode;
     }
 
-    public Task<ProviderWebhookResult?> HandleWebhookAsync(string payload, IDictionary<string, string> headers, CancellationToken ct = default)
+    public async Task<ProviderWebhookResult?> HandleWebhookAsync(string payload, IDictionary<string, string> headers, CancellationToken ct = default)
     {
+        var creds = await _settings.GetActiveCredentialsAsync(PaymentProviderType.Fib, ct);
+        if (!WebhookSecrets.MatchesOptionalSecret(creds.WebhookSecret, headers))
+            return null;
+
         using var doc = JsonDocument.Parse(payload);
         var root = doc.RootElement;
         var providerId = root.TryGetProperty("id", out var id) ? id.GetString() : null;
@@ -284,12 +268,12 @@ public class FibPaymentProvider : HttpPaymentProviderBase, IPaymentProvider
             "DECLINED" => PaymentStatus.Declined,
             _ => PaymentStatus.Pending
         };
-        return Task.FromResult<ProviderWebhookResult?>(new ProviderWebhookResult
+        return new ProviderWebhookResult
         {
             ProviderPaymentId = providerId,
             Status = status,
             RawPayload = payload
-        });
+        };
     }
 
     private async Task<string> GetTokenAsync(ProviderEnvCredentials options, CancellationToken ct)
@@ -518,34 +502,50 @@ public class ZainCashPaymentProvider : HttpPaymentProviderBase, IPaymentProvider
 
     public Task<bool> CancelAsync(string providerPaymentId, CancellationToken ct = default) => Task.FromResult(false);
 
-    public Task<ProviderWebhookResult?> HandleWebhookAsync(string payload, IDictionary<string, string> headers, CancellationToken ct = default)
+    public async Task<ProviderWebhookResult?> HandleWebhookAsync(string payload, IDictionary<string, string> headers, CancellationToken ct = default)
     {
-        var status = PaymentStatus.Pending;
-        string? providerId = null;
         try
         {
-            var json = payload.Trim().StartsWith('{') ? payload : DecodeJwtPayload(payload);
+            var creds = await _settings.GetActiveCredentialsAsync(PaymentProviderType.ZainCash, ct);
+            if (!WebhookSecrets.MatchesOptionalSecret(creds.WebhookSecret, headers))
+                return null;
+
+            string json;
+            if (payload.Trim().StartsWith('{'))
+            {
+                // JSON bodies require an explicit webhook secret when configured; without JWT there is no HMAC.
+                if (string.IsNullOrWhiteSpace(creds.WebhookSecret) && string.IsNullOrWhiteSpace(creds.Secret))
+                    return null;
+                json = payload;
+            }
+            else
+            {
+                var secret = FirstNonEmpty(creds.Secret, creds.ClientSecret, creds.WebhookSecret);
+                if (string.IsNullOrWhiteSpace(secret) || !TryVerifyHs256Jwt(payload, secret, out json))
+                    return null;
+            }
+
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            providerId = root.TryGetProperty("id", out var id) ? id.GetString() : null;
+            var providerId = root.TryGetProperty("id", out var id) ? id.GetString() : null;
             var st = root.TryGetProperty("status", out var s) ? s.GetString() : null;
-            status = st?.ToLowerInvariant() switch
+            var status = st?.ToLowerInvariant() switch
             {
                 "success" or "completed" or "paid" => PaymentStatus.Paid,
                 "failed" or "fail" => PaymentStatus.Failed,
                 "pending" => PaymentStatus.Pending,
                 _ => PaymentStatus.Failed
             };
-            return Task.FromResult<ProviderWebhookResult?>(new ProviderWebhookResult
+            return new ProviderWebhookResult
             {
                 ProviderPaymentId = providerId,
                 Status = status,
                 RawPayload = json
-            });
+            };
         }
         catch
         {
-            return Task.FromResult<ProviderWebhookResult?>(null);
+            return null;
         }
     }
 
@@ -560,13 +560,32 @@ public class ZainCashPaymentProvider : HttpPaymentProviderBase, IPaymentProvider
         return $"{data}.{sig}";
     }
 
-    private static string DecodeJwtPayload(string jwt)
+    private static bool TryVerifyHs256Jwt(string jwt, string secret, out string payloadJson)
     {
+        payloadJson = "";
         var parts = jwt.Split('.');
-        if (parts.Length < 2) throw new InvalidOperationException("Invalid token");
+        if (parts.Length != 3) return false;
+
+        string B64Url(byte[] bytes) => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        var data = $"{parts[0]}.{parts[1]}";
+        using var hmac = new System.Security.Cryptography.HMACSHA256(Encoding.UTF8.GetBytes(secret));
+        var expected = B64Url(hmac.ComputeHash(Encoding.UTF8.GetBytes(data)));
+        if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(expected),
+                Encoding.UTF8.GetBytes(parts[2])))
+            return false;
+
         var payload = parts[1].Replace('-', '+').Replace('_', '/');
         switch (payload.Length % 4) { case 2: payload += "=="; break; case 3: payload += "="; break; }
-        return Encoding.UTF8.GetString(Convert.FromBase64String(payload));
+        payloadJson = Encoding.UTF8.GetString(Convert.FromBase64String(payload));
+        return true;
+    }
+
+    private static string? FirstNonEmpty(params string?[] values)
+    {
+        foreach (var v in values)
+            if (!string.IsNullOrWhiteSpace(v)) return v;
+        return null;
     }
 }
 
@@ -741,8 +760,18 @@ public abstract class QiGatePaymentProviderBase : HttpPaymentProviderBase, IPaym
         return client;
     }
 
-    public Task<ProviderWebhookResult?> HandleWebhookAsync(string payload, IDictionary<string, string> headers, CancellationToken ct = default)
+    public async Task<ProviderWebhookResult?> HandleWebhookAsync(string payload, IDictionary<string, string> headers, CancellationToken ct = default)
     {
+        var creds = await _settings.GetActiveCredentialsAsync(ProviderType, ct);
+        if (!WebhookSecrets.MatchesOptionalSecret(creds.WebhookSecret, headers))
+            return null;
+        // Without a configured webhook secret, require Basic auth matching Qi credentials.
+        if (string.IsNullOrWhiteSpace(creds.WebhookSecret))
+        {
+            if (!WebhookSecrets.MatchesBasicAuth(creds.Username, creds.Password, headers))
+                return null;
+        }
+
         using var doc = JsonDocument.Parse(payload);
         var root = doc.RootElement;
         var providerId = root.TryGetProperty("paymentId", out var pid) ? pid.GetString()
@@ -755,11 +784,51 @@ public abstract class QiGatePaymentProviderBase : HttpPaymentProviderBase, IPaym
             "CANCELLED" or "CANCELED" => PaymentStatus.Cancelled,
             _ => PaymentStatus.Pending
         };
-        return Task.FromResult<ProviderWebhookResult?>(new ProviderWebhookResult
+        return new ProviderWebhookResult
         {
             ProviderPaymentId = providerId,
             Status = status,
             RawPayload = payload
-        });
+        };
+    }
+}
+
+internal static class WebhookSecrets
+{
+    public static bool MatchesOptionalSecret(string? configuredSecret, IDictionary<string, string> headers)
+    {
+        if (string.IsNullOrWhiteSpace(configuredSecret))
+            return true;
+
+        if (!headers.TryGetValue("X-Webhook-Secret", out var provided)
+            && !headers.TryGetValue("X-Fynexpay-Provider-Secret", out provided))
+            return false;
+
+        var a = Encoding.UTF8.GetBytes(configuredSecret.Trim());
+        var b = Encoding.UTF8.GetBytes(provided.Trim());
+        return a.Length == b.Length && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(a, b);
+    }
+
+    public static bool MatchesBasicAuth(string? username, string? password, IDictionary<string, string> headers)
+    {
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+            return false;
+        if (!headers.TryGetValue("Authorization", out var auth) || string.IsNullOrWhiteSpace(auth))
+            return false;
+        if (!auth.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        try
+        {
+            var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(auth["Basic ".Length..].Trim()));
+            var expected = $"{username}:{password}";
+            var a = Encoding.UTF8.GetBytes(expected);
+            var b = Encoding.UTF8.GetBytes(decoded);
+            return a.Length == b.Length && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(a, b);
+        }
+        catch
+        {
+            return false;
+        }
     }
 }

@@ -11,7 +11,7 @@ public enum ProviderEnvironment
 public class ProviderRuntimeSettings
 {
     public string ActiveEnvironment { get; set; } = "Test";
-    public bool UseMockWhenMissingCredentials { get; set; } = true;
+    public bool UseMockWhenMissingCredentials { get; set; } = false;
     public ProviderBundleSettings Fib { get; set; } = ProviderBundleSettings.DefaultFib();
     public ProviderBundleSettings ZainCash { get; set; } = ProviderBundleSettings.DefaultZainCash();
     public ProviderBundleSettings Qi { get; set; } = ProviderBundleSettings.DefaultQi();
@@ -60,11 +60,9 @@ public class ProviderBundleSettings
         LogoUrl = "/providers/zaincash.svg",
         Test = new ProviderEnvCredentials
         {
-            // Official ZainCash PG API v2 UAT (docs.zaincash.iq)
+            // Official ZainCash PG API v2 UAT (docs.zaincash.iq) — credentials via admin/env only
             BaseUrl = "https://pg-api-uat.zaincash.iq",
-            AuthUrl = "https://pg-api-uat.zaincash.iq/oauth2/token",
-            ClientId = "758055f4a8044779a35f6ceb69f858b3",
-            ClientSecret = "bibLCGTxVAig5To3OLLKPJQMlRR7Pefp"
+            AuthUrl = "https://pg-api-uat.zaincash.iq/oauth2/token"
         },
         Production = new ProviderEnvCredentials
         {
@@ -80,11 +78,7 @@ public class ProviderBundleSettings
         LogoUrl = "/providers/qi.svg",
         Test = new ProviderEnvCredentials
         {
-            // Official Qi Gate public sandbox (developers-gate.qi.iq)
-            BaseUrl = "https://uat-sandbox-3ds-api.qi.iq/api/v1",
-            Username = "paymentgatewaytest",
-            Password = "WHaNFE5C3qlChqNbAzH4",
-            TerminalId = "237984"
+            BaseUrl = "https://uat-sandbox-3ds-api.qi.iq/api/v1"
         },
         Production = new ProviderEnvCredentials
         {
@@ -93,7 +87,7 @@ public class ProviderBundleSettings
     };
 
     /// <summary>
-    /// SuperQi wallet via QI Gate (SDK ALIPAY method). Uses same Gate sandbox credentials by default.
+    /// SuperQi wallet via QI Gate (SDK ALIPAY method).
     /// Docs: https://developers-gate.qi.iq/docs/category/pay-with-superqi
     /// </summary>
     public static ProviderBundleSettings DefaultSuperQi() => new()
@@ -103,10 +97,7 @@ public class ProviderBundleSettings
         LogoUrl = "/providers/superqi.svg",
         Test = new ProviderEnvCredentials
         {
-            BaseUrl = "https://uat-sandbox-3ds-api.qi.iq/api/v1",
-            Username = "paymentgatewaytest",
-            Password = "WHaNFE5C3qlChqNbAzH4",
-            TerminalId = "237984"
+            BaseUrl = "https://uat-sandbox-3ds-api.qi.iq/api/v1"
         },
         Production = new ProviderEnvCredentials
         {
@@ -127,6 +118,8 @@ public class ProviderEnvCredentials
     public string Username { get; set; } = "";
     public string Password { get; set; } = "";
     public string TerminalId { get; set; } = "";
+    /// <summary>Optional shared secret; when set, inbound webhooks must send X-Webhook-Secret.</summary>
+    public string WebhookSecret { get; set; } = "";
 }
 
 public interface IProviderSettingsService

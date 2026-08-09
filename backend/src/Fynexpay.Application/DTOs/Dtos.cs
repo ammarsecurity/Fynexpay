@@ -34,6 +34,18 @@ public record CreatePaymentRequest(
     string? CallbackUrl,
     Guid? MerchantPlatformId = null);
 
+/// <summary>
+/// Public /v1 create-payment body. Platform is inferred from X-Api-Key (not sent in JSON).
+/// </summary>
+public record CreatePublicPaymentRequest(
+    decimal Amount,
+    string? Currency,
+    string? OrderId,
+    string? ServiceType,
+    string? SuccessUrl,
+    string? FailureUrl,
+    string? CallbackUrl);
+
 public record InitiatePaymentRequest(string Provider);
 
 public record PaymentEventDto(
@@ -147,6 +159,7 @@ public record MerchantPlatformDto(
     string? MerchantName,
     string Name,
     string Domain,
+    string? LogoUrl,
     string Status,
     string? AdminNotes,
     DateTime CreatedAtUtc,

@@ -16,11 +16,16 @@ public class DynamicCorsPolicyProvider : ICorsPolicyProvider
     ];
 
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IHostEnvironment _env;
     private readonly object _lock = new();
     private List<string> _cachedOrigins = new(DevOrigins);
     private DateTime _cachedAtUtc = DateTime.MinValue;
 
-    public DynamicCorsPolicyProvider(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
+    public DynamicCorsPolicyProvider(IServiceScopeFactory scopeFactory, IHostEnvironment env)
+    {
+        _scopeFactory = scopeFactory;
+        _env = env;
+    }
 
     public async Task<CorsPolicy?> GetPolicyAsync(HttpContext context, string? policyName)
     {
@@ -32,8 +37,18 @@ public class DynamicCorsPolicyProvider : ICorsPolicyProvider
         };
         foreach (var o in _cachedOrigins)
             policy.Origins.Add(o);
-        policy.Headers.Add("*");
-        policy.Methods.Add("*");
+        policy.Headers.Add("Authorization");
+        policy.Headers.Add("Content-Type");
+        policy.Headers.Add("X-Api-Key");
+        policy.Headers.Add("X-Idempotency-Key");
+        policy.Headers.Add("Accept");
+        policy.Headers.Add("Origin");
+        policy.Methods.Add("GET");
+        policy.Methods.Add("POST");
+        policy.Methods.Add("PUT");
+        policy.Methods.Add("PATCH");
+        policy.Methods.Add("DELETE");
+        policy.Methods.Add("OPTIONS");
         policy.PreflightMaxAge = TimeSpan.FromMinutes(10);
         return policy;
     }
@@ -55,24 +70,31 @@ public class DynamicCorsPolicyProvider : ICorsPolicyProvider
             domains = Array.Empty<string>();
         }
 
-        var origins = new HashSet<string>(DevOrigins, StringComparer.OrdinalIgnoreCase);
+        var origins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (_env.IsDevelopment())
+        {
+            foreach (var o in DevOrigins)
+                origins.Add(o);
+        }
+
         foreach (var domain in domains)
         {
-            if (domain.StartsWith("localhost", StringComparison.OrdinalIgnoreCase))
+            if (domain.StartsWith("localhost", StringComparison.OrdinalIgnoreCase)
+                || domain.StartsWith("127.0.0.1", StringComparison.OrdinalIgnoreCase))
             {
                 origins.Add($"http://{domain}");
                 origins.Add($"https://{domain}");
             }
             else
             {
+                // Production hosts: HTTPS only (mitigate MITM via cleartext origins).
                 origins.Add($"https://{domain}");
-                origins.Add($"http://{domain}");
             }
         }
 
         lock (_lock)
         {
-            _cachedOrigins = origins.ToList();
+            _cachedOrigins = origins.Count > 0 ? origins.ToList() : DevOrigins.ToList();
             _cachedAtUtc = DateTime.UtcNow;
         }
     }

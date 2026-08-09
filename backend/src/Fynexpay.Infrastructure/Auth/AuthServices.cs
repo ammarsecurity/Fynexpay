@@ -57,11 +57,15 @@ public class JwtTokenService : IJwtTokenService
         if (merchantId.HasValue)
             claims.Add(new Claim("merchant_id", merchantId.Value.ToString()));
 
+        var hours = 8;
+        if (int.TryParse(_configuration["Jwt:ExpiryHours"], out var configuredHours) && configuredHours is > 0 and <= 72)
+            hours = configuredHours;
+
         var token = new JwtSecurityToken(
             issuer: _configuration["Jwt:Issuer"],
             audience: _configuration["Jwt:Audience"],
             claims: claims,
-            expires: DateTime.UtcNow.AddDays(7),
+            expires: DateTime.UtcNow.AddHours(hours),
             signingCredentials: creds);
 
         return new JwtSecurityTokenHandler().WriteToken(token);

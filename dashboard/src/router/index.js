@@ -34,12 +34,33 @@ const router = createRouter({
   routes
 })
 
+const pendingMerchantAllowed = new Set([
+  'merchant-overview',
+  'merchant-platforms',
+  'merchant-docs',
+  'merchant-methods',
+  'merchant-payments',
+  'home'
+])
+
 router.beforeEach((to) => {
   const auth = useAuthStore()
   if (to.meta.auth && !auth.isAuthenticated) return '/login'
   if (to.meta.guest && auth.isAuthenticated) return '/'
   if (to.meta.admin && !auth.isAdmin) return '/merchant'
   if (to.meta.merchant && !auth.isMerchant) return '/admin'
+
+  const status = auth.user?.merchantStatus
+  if (
+    auth.isMerchant &&
+    status &&
+    status !== 'Active' &&
+    to.meta.merchant &&
+    !pendingMerchantAllowed.has(String(to.name || ''))
+  ) {
+    return { name: 'merchant-overview' }
+  }
+
   return true
 })
 

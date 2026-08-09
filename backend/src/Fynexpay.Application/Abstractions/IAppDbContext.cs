@@ -1,5 +1,6 @@
 using Fynexpay.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Fynexpay.Application.Abstractions;
 
@@ -16,4 +17,5 @@ public interface IAppDbContext
     DbSet<PayoutRequest> PayoutRequests { get; }
     DbSet<PlatformSetting> PlatformSettings { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+    Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default);
 }

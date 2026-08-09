@@ -4,6 +4,7 @@ using System.Text.Json;
 using Fynexpay.Application.Abstractions;
 using Fynexpay.Application.Abstractions.Payments;
 using Fynexpay.Application.DTOs;
+using Fynexpay.Application.Security;
 using Fynexpay.Domain.Entities;
 using Fynexpay.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -26,16 +27,22 @@ public class AuthService
 
     public async Task<AuthResponse> RegisterMerchantAsync(RegisterMerchantRequest request, CancellationToken ct = default)
     {
-        if (await _db.Users.AnyAsync(u => u.Email == request.Email.ToLowerInvariant(), ct))
+        PasswordRules.ValidateEmail(request.Email);
+        PasswordRules.Validate(request.Password);
+        PasswordRules.ValidateRequired(request.FullName, "الاسم الكامل");
+        PasswordRules.ValidateRequired(request.BusinessName, "اسم النشاط");
+
+        var email = request.Email.Trim().ToLowerInvariant();
+        if (await _db.Users.AnyAsync(u => u.Email == email, ct))
             throw new InvalidOperationException("البريد الإلكتروني مستخدم مسبقاً");
 
         var merchant = new Merchant
         {
-            BusinessName = request.BusinessName,
-            BusinessNameAr = request.BusinessNameAr,
-            ContactEmail = request.Email.ToLowerInvariant(),
-            ContactPhone = request.ContactPhone,
-            WebsiteUrl = request.WebsiteUrl,
+            BusinessName = request.BusinessName.Trim(),
+            BusinessNameAr = string.IsNullOrWhiteSpace(request.BusinessNameAr) ? null : request.BusinessNameAr.Trim(),
+            ContactEmail = email,
+            ContactPhone = request.ContactPhone?.Trim(),
+            WebsiteUrl = request.WebsiteUrl?.Trim(),
             Status = MerchantStatus.Pending,
             CommissionPercent = 2.5m,
             WebhookSecret = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant()
@@ -44,9 +51,9 @@ public class AuthService
         var wallet = new Wallet { Merchant = merchant, Currency = "IQD" };
         var user = new User
         {
-            Email = request.Email.ToLowerInvariant(),
-            FullName = request.FullName,
-            Phone = request.ContactPhone,
+            Email = email,
+            FullName = request.FullName.Trim(),
+            Phone = request.ContactPhone?.Trim(),
             PasswordHash = _passwordHasher.Hash(request.Password),
             Role = UserRole.MerchantOwner,
             Merchant = merchant
@@ -63,12 +70,16 @@ public class AuthService
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken ct = default)
     {
+        PasswordRules.ValidateEmail(request.Email);
         var user = await _db.Users.Include(u => u.Merchant)
-            .FirstOrDefaultAsync(u => u.Email == request.Email.ToLowerInvariant(), ct)
+            .FirstOrDefaultAsync(u => u.Email == request.Email.Trim().ToLowerInvariant(), ct)
             ?? throw new UnauthorizedAccessException("بيانات الدخول غير صحيحة");
 
         if (!user.IsActive || !_passwordHasher.Verify(request.Password, user.PasswordHash))
             throw new UnauthorizedAccessException("بيانات الدخول غير صحيحة");
+
+        if (user.Merchant is { Status: MerchantStatus.Suspended or MerchantStatus.Rejected })
+            throw new UnauthorizedAccessException("حساب التاجر موقوف أو مرفوض");
 
         var token = _jwt.CreateToken(user.Id, user.Email, user.Role.ToString(), user.MerchantId, user.FullName);
         return new AuthResponse(token, user.Id, user.Email, user.FullName, user.Role.ToString(), user.MerchantId, user.Merchant?.Status.ToString());
@@ -113,6 +124,7 @@ public class PaymentService
         if (merchant.Status != MerchantStatus.Active)
             throw new InvalidOperationException("حساب التاجر غير مفعّل");
 
+        string? platformDomain = null;
         if (merchantPlatformId.HasValue)
         {
             var platform = await _db.MerchantPlatforms.FirstOrDefaultAsync(
@@ -120,6 +132,14 @@ public class PaymentService
                 ?? throw new InvalidOperationException("المنصة غير موجودة");
             if (platform.Status != PlatformStatus.Approved)
                 throw new InvalidOperationException("المنصة غير معتمدة");
+            platformDomain = platform.Domain;
+            UrlSafety.ValidateMerchantUrls(request.SuccessUrl, request.FailureUrl, request.CallbackUrl, platform.Domain);
+        }
+        else if (!string.IsNullOrWhiteSpace(request.SuccessUrl)
+                 || !string.IsNullOrWhiteSpace(request.FailureUrl)
+                 || !string.IsNullOrWhiteSpace(request.CallbackUrl))
+        {
+            throw new ArgumentException("روابط النجاح/الفشل/الإشعار تتطلب منصة معتمدة مربوطة بالمفتاح");
         }
 
         if (request.Amount < 250)
@@ -161,9 +181,9 @@ public class PaymentService
             Description = serviceType.Trim(),
             Status = PaymentStatus.Pending,
             Provider = PaymentProviderType.Auto, // يختاره الزبون لاحقاً في صفحة الدفع
-            SuccessUrl = request.SuccessUrl,
-            FailureUrl = request.FailureUrl,
-            CallbackUrl = request.CallbackUrl,
+            SuccessUrl = request.SuccessUrl?.Trim(),
+            FailureUrl = request.FailureUrl?.Trim(),
+            CallbackUrl = request.CallbackUrl?.Trim(),
             IdempotencyKey = idempotencyKey,
             PlatformFee = fee,
             NetAmount = net,
@@ -171,8 +191,20 @@ public class PaymentService
         };
 
         _db.Payments.Add(payment);
-        await _db.SaveChangesAsync(ct);
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException) when (!string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            var raced = await _db.Payments.FirstOrDefaultAsync(
+                p => p.MerchantId == merchantId && p.IdempotencyKey == idempotencyKey, ct);
+            if (raced != null)
+                return await MapAsync(raced, ct);
+            throw;
+        }
 
+        _ = platformDomain; // validated above
         payment.CheckoutUrl = $"{_publicBaseUrl}/checkout/{payment.Id}";
         payment.UpdatedAtUtc = DateTime.UtcNow;
 
@@ -389,9 +421,15 @@ public class PaymentService
 
     public async Task ApplyProviderStatusAsync(Guid paymentId, PaymentStatus status, string source, string payload, string? failureReason = null, CancellationToken ct = default)
     {
+        await using var tx = await _db.BeginTransactionAsync(ct);
+
         var payment = await _db.Payments.Include(p => p.Merchant).ThenInclude(m => m!.Wallet)
             .FirstOrDefaultAsync(p => p.Id == paymentId, ct);
-        if (payment == null) return;
+        if (payment == null)
+        {
+            await tx.RollbackAsync(ct);
+            return;
+        }
 
         _db.PaymentEvents.Add(new PaymentEvent
         {
@@ -401,24 +439,36 @@ public class PaymentService
             Payload = payload
         });
 
-        if (payment.Status == PaymentStatus.Paid && status == PaymentStatus.Paid)
+        if (!TryTransitionPaymentStatus(payment.Status, status, out var effective))
         {
             await _db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
             return;
         }
 
-        payment.Status = status;
+        var previous = payment.Status;
+        payment.Status = effective;
         payment.UpdatedAtUtc = DateTime.UtcNow;
-        payment.FailureReason = failureReason;
+        if (!string.IsNullOrWhiteSpace(failureReason))
+            payment.FailureReason = failureReason;
 
-        if (status == PaymentStatus.Paid && !payment.LedgerApplied)
+        if (effective == PaymentStatus.Paid && !payment.LedgerApplied)
         {
             payment.PaidAtUtc = DateTime.UtcNow;
             await CreditWalletAsync(payment, ct);
             payment.LedgerApplied = true;
         }
+        else if (previous == PaymentStatus.Paid
+                 && effective == PaymentStatus.Refunded
+                 && payment.LedgerApplied
+                 && !payment.RefundLedgerApplied)
+        {
+            await DebitWalletForRefundAsync(payment, ct);
+            payment.RefundLedgerApplied = true;
+        }
 
         await _db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
 
         try
         {
@@ -428,6 +478,44 @@ public class PaymentService
         {
             _logger.LogWarning(ex, "Failed to send merchant webhook for payment {PaymentId}", payment.Id);
         }
+    }
+
+    /// <summary>
+    /// One-way money-safe transitions. Paid cannot move to Failed/Cancelled; only Refunded is allowed from Paid.
+    /// </summary>
+    private static bool TryTransitionPaymentStatus(PaymentStatus current, PaymentStatus incoming, out PaymentStatus effective)
+    {
+        effective = current;
+
+        if (current == incoming)
+            return false;
+
+        if (current == PaymentStatus.Refunded)
+            return false;
+
+        if (current == PaymentStatus.Paid)
+        {
+            if (incoming == PaymentStatus.Refunded)
+            {
+                effective = PaymentStatus.Refunded;
+                return true;
+            }
+            // Ignore downgrades from Paid (forged/late Failed webhooks).
+            return false;
+        }
+
+        // Terminal non-paid states are sticky.
+        if (current is PaymentStatus.Failed or PaymentStatus.Declined or PaymentStatus.Expired or PaymentStatus.Cancelled)
+            return false;
+
+        // Pending → any terminal / paid
+        if (current == PaymentStatus.Pending)
+        {
+            effective = incoming;
+            return true;
+        }
+
+        return false;
     }
 
     public async Task ApplyByProviderPaymentIdAsync(string providerPaymentId, PaymentProviderType provider, PaymentStatus status, string payload, string? failureReason = null, CancellationToken ct = default)
@@ -487,6 +575,26 @@ public class PaymentService
             Amount = -payment.PlatformFee,
             BalanceAfter = wallet.AvailableBalance,
             Description = $"عمولة المنصة #{paymentRef}",
+            PaymentId = payment.Id
+        });
+    }
+
+    private async Task DebitWalletForRefundAsync(Payment payment, CancellationToken ct)
+    {
+        var wallet = await _db.Wallets.FirstAsync(w => w.MerchantId == payment.MerchantId, ct);
+        wallet.AvailableBalance -= payment.NetAmount;
+        wallet.LifetimeGross -= payment.Amount;
+        wallet.LifetimeFees -= payment.PlatformFee;
+        wallet.UpdatedAtUtc = DateTime.UtcNow;
+
+        var paymentRef = payment.Id.ToString("N")[..8].ToUpperInvariant();
+        _db.WalletLedgerEntries.Add(new WalletLedgerEntry
+        {
+            WalletId = wallet.Id,
+            Type = LedgerEntryType.PaymentRefund,
+            Amount = -payment.NetAmount,
+            BalanceAfter = wallet.AvailableBalance,
+            Description = $"استرجاع دفعة #{paymentRef}",
             PaymentId = payment.Id
         });
     }
@@ -612,6 +720,13 @@ public class PayoutService
         if (request.Amount <= 0)
             throw new ArgumentException("المبلغ غير صالح");
 
+        var merchant = await _db.Merchants.AsNoTracking().FirstOrDefaultAsync(m => m.Id == merchantId, ct)
+            ?? throw new InvalidOperationException("التاجر غير موجود");
+        if (merchant.Status != MerchantStatus.Active)
+            throw new InvalidOperationException("حساب التاجر غير مفعّل");
+
+        await using var tx = await _db.BeginTransactionAsync(ct);
+
         var wallet = await _db.Wallets.FirstAsync(w => w.MerchantId == merchantId, ct);
         if (wallet.AvailableBalance < request.Amount)
             throw new InvalidOperationException("الرصيد غير كافٍ");
@@ -641,6 +756,7 @@ public class PayoutService
         });
 
         await _db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         return Map(payout);
     }
 
@@ -654,6 +770,8 @@ public class PayoutService
 
     public async Task<PayoutDto> ReviewAsync(Guid payoutId, Guid adminUserId, ReviewPayoutRequest request, CancellationToken ct = default)
     {
+        await using var tx = await _db.BeginTransactionAsync(ct);
+
         var payout = await _db.PayoutRequests.FirstOrDefaultAsync(p => p.Id == payoutId, ct)
             ?? throw new InvalidOperationException("طلب السحب غير موجود");
 
@@ -670,6 +788,8 @@ public class PayoutService
         {
             if (payout.Status is not (PayoutStatus.Pending or PayoutStatus.Approved))
                 throw new InvalidOperationException("لا يمكن إتمام هذا الطلب");
+            if (payout.Status == PayoutStatus.Completed)
+                throw new InvalidOperationException("تم إتمام هذا الطلب مسبقاً");
             payout.Status = PayoutStatus.Completed;
             wallet.PendingBalance -= payout.Amount;
             wallet.LifetimePayouts += payout.Amount;
@@ -712,6 +832,7 @@ public class PayoutService
         payout.UpdatedAtUtc = DateTime.UtcNow;
         wallet.UpdatedAtUtc = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         return Map(payout);
     }
 
@@ -760,9 +881,13 @@ public class MerchantAdminService
             .Select(u => new MerchantOwnerDto(u.Id, u.Email, u.FullName, u.Phone, u.IsActive, u.CreatedAtUtc))
             .ToList();
 
+        var maskedSecret = string.IsNullOrEmpty(m.WebhookSecret) || m.WebhookSecret.Length < 8
+            ? "********"
+            : $"{m.WebhookSecret[..4]}…{m.WebhookSecret[^4..]}";
+
         return new MerchantDetailDto(
             m.Id, m.BusinessName, m.BusinessNameAr, m.ContactEmail, m.ContactPhone,
-            m.Status.ToString(), m.CommissionPercent, m.WebsiteUrl, m.Notes, m.WebhookSecret,
+            m.Status.ToString(), m.CommissionPercent, m.WebsiteUrl, m.Notes, maskedSecret,
             m.FibEnabled, m.ZainCashEnabled, m.QiEnabled, m.SuperQiEnabled,
             m.CreatedAtUtc, m.UpdatedAtUtc,
             m.Wallet?.AvailableBalance ?? 0,
@@ -838,8 +963,7 @@ public class MerchantAdminService
             }
             if (!string.IsNullOrWhiteSpace(request.NewPassword))
             {
-                if (request.NewPassword.Length < 8)
-                    throw new ArgumentException("كلمة المرور يجب أن تكون 8 أحرف على الأقل");
+                PasswordRules.Validate(request.NewPassword);
                 owner.PasswordHash = _passwordHasher.Hash(request.NewPassword);
                 owner.UpdatedAtUtc = DateTime.UtcNow;
             }
