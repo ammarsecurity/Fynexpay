@@ -28,6 +28,8 @@ public class ProviderBundleSettings
 {
     public bool Enabled { get; set; } = true;
     public int Priority { get; set; }
+    /// <summary>Public relative URL e.g. /uploads/providers/fib.png</summary>
+    public string? LogoUrl { get; set; }
     public ProviderEnvCredentials Test { get; set; } = new();
     public ProviderEnvCredentials Production { get; set; } = new();
 
@@ -38,6 +40,7 @@ public class ProviderBundleSettings
     {
         Enabled = true,
         Priority = 2,
+        LogoUrl = "/providers/fib.svg",
         Test = new ProviderEnvCredentials
         {
             AuthUrl = "https://fib.stage.fib.iq/auth/realms/fib-online-shop/protocol/openid-connect/token",
@@ -54,6 +57,7 @@ public class ProviderBundleSettings
     {
         Enabled = true,
         Priority = 1,
+        LogoUrl = "/providers/zaincash.svg",
         Test = new ProviderEnvCredentials
         {
             // Official ZainCash PG API v2 UAT (docs.zaincash.iq)
@@ -73,6 +77,7 @@ public class ProviderBundleSettings
     {
         Enabled = true,
         Priority = 0,
+        LogoUrl = "/providers/qi.svg",
         Test = new ProviderEnvCredentials
         {
             // Official Qi Gate public sandbox (developers-gate.qi.iq)
@@ -95,6 +100,7 @@ public class ProviderBundleSettings
     {
         Enabled = true,
         Priority = 3,
+        LogoUrl = "/providers/superqi.svg",
         Test = new ProviderEnvCredentials
         {
             BaseUrl = "https://uat-sandbox-3ds-api.qi.iq/api/v1",

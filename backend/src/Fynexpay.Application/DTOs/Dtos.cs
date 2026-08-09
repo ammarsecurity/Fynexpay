@@ -31,12 +31,23 @@ public record CreatePaymentRequest(
     string? Provider,
     string? SuccessUrl,
     string? FailureUrl,
-    string? CallbackUrl);
+    string? CallbackUrl,
+    Guid? MerchantPlatformId = null);
 
 public record InitiatePaymentRequest(string Provider);
 
+public record PaymentEventDto(
+    Guid Id,
+    string Source,
+    string EventType,
+    string Payload,
+    DateTime CreatedAtUtc);
+
 public record PaymentDto(
     Guid Id,
+    Guid MerchantId,
+    Guid? MerchantPlatformId,
+    string? MerchantName,
     string OrderId,
     decimal Amount,
     string Currency,
@@ -45,14 +56,25 @@ public record PaymentDto(
     string? Description,
     string? CheckoutUrl,
     string? ProviderCheckoutUrl,
+    string? PlatformReturnUrl,
     string? QrCode,
     string? ReadableCode,
+    string? SuccessUrl,
+    string? FailureUrl,
+    string? CallbackUrl,
+    string? ProviderPaymentId,
+    string? IdempotencyKey,
     decimal PlatformFee,
     decimal NetAmount,
+    bool LedgerApplied,
     DateTime CreatedAtUtc,
+    DateTime? UpdatedAtUtc,
     DateTime? PaidAtUtc,
+    DateTime? ExpiredAtUtc,
     string? FailureReason,
-    IReadOnlyList<string>? AvailableProviders);
+    string? ProviderRawResponse,
+    IReadOnlyList<string>? AvailableProviders,
+    IReadOnlyList<PaymentEventDto>? Events = null);
 
 public record MerchantPaymentMethodsDto(
     bool FibEnabled,
@@ -60,7 +82,8 @@ public record MerchantPaymentMethodsDto(
     bool QiEnabled,
     bool SuperQiEnabled,
     IReadOnlyList<string> PlatformEnabled,
-    IReadOnlyList<string> EffectiveProviders);
+    IReadOnlyList<string> EffectiveProviders,
+    IReadOnlyList<ProviderCatalogItemDto> Catalog);
 
 public record UpdateMerchantPaymentMethodsRequest(
     bool? FibEnabled,
@@ -101,8 +124,38 @@ public record PayoutDto(
     DateTime? ReviewedAtUtc,
     DateTime? CompletedAtUtc);
 
-public record ApiKeyDto(Guid Id, string Name, string KeyPrefix, bool IsActive, DateTime CreatedAtUtc, DateTime? LastUsedAtUtc);
+public record ApiKeyDto(
+    Guid Id,
+    string Name,
+    string KeyPrefix,
+    bool IsActive,
+    DateTime CreatedAtUtc,
+    DateTime? LastUsedAtUtc,
+    Guid? MerchantPlatformId = null,
+    string? PlatformName = null,
+    string? PlatformDomain = null);
+
 public record CreateApiKeyResponse(Guid Id, string Name, string KeyPrefix, string ApiKey, DateTime CreatedAtUtc);
+
+public record CreateMerchantPlatformRequest(string Name, string Domain);
+public record UpdateMerchantPlatformRequest(string? Name, string? Domain);
+public record ReviewMerchantPlatformRequest(string Action, string? AdminNotes);
+
+public record MerchantPlatformDto(
+    Guid Id,
+    Guid MerchantId,
+    string? MerchantName,
+    string Name,
+    string Domain,
+    string Status,
+    string? AdminNotes,
+    DateTime CreatedAtUtc,
+    DateTime? UpdatedAtUtc,
+    DateTime? ReviewedAtUtc,
+    Guid? ApiKeyId,
+    string? ApiKeyPrefix,
+    bool HasOneTimeApiKey,
+    string? OneTimeApiKey = null);
 
 public record MerchantDto(
     Guid Id,
@@ -116,7 +169,56 @@ public record MerchantDto(
     DateTime CreatedAtUtc,
     decimal AvailableBalance);
 
-public record UpdateMerchantAdminRequest(string? Status, decimal? CommissionPercent, string? Notes);
+public record MerchantOwnerDto(
+    Guid Id,
+    string Email,
+    string FullName,
+    string? Phone,
+    bool IsActive,
+    DateTime CreatedAtUtc);
+
+public record MerchantDetailDto(
+    Guid Id,
+    string BusinessName,
+    string? BusinessNameAr,
+    string ContactEmail,
+    string? ContactPhone,
+    string Status,
+    decimal CommissionPercent,
+    string? WebsiteUrl,
+    string? Notes,
+    string WebhookSecret,
+    bool FibEnabled,
+    bool ZainCashEnabled,
+    bool QiEnabled,
+    bool SuperQiEnabled,
+    DateTime CreatedAtUtc,
+    DateTime? UpdatedAtUtc,
+    decimal AvailableBalance,
+    decimal PendingBalance,
+    decimal LifetimeGross,
+    decimal LifetimeFees,
+    int PaymentsCount,
+    int ApiKeysCount,
+    IReadOnlyList<MerchantOwnerDto> Owners);
+
+public record UpdateMerchantAdminRequest(
+    string? Status,
+    decimal? CommissionPercent,
+    string? Notes,
+    string? BusinessName,
+    string? BusinessNameAr,
+    string? ContactEmail,
+    string? ContactPhone,
+    string? WebsiteUrl,
+    bool? FibEnabled,
+    bool? ZainCashEnabled,
+    bool? QiEnabled,
+    bool? SuperQiEnabled,
+    string? OwnerFullName,
+    string? OwnerEmail,
+    string? OwnerPhone,
+    string? NewPassword);
 public record ReviewPayoutRequest(string Action, string? AdminNote);
 public record PlatformStatsDto(
     int MerchantsCount,
@@ -131,6 +233,15 @@ public record ProviderConfigDto(
     bool Enabled,
     int Priority,
     bool HasCredentials);
+
+public record PagedResult<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
+
+public record ProviderCatalogItemDto(
+    string Key,
+    string Name,
+    string? LogoUrl,
+    bool Enabled,
+    int Priority);
 
 public static class EnumMaps
 {

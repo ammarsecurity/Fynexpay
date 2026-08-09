@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using Fynexpay.Application.Abstractions;
+using Fynexpay.Application.Abstractions.Payments;
 using Fynexpay.Application.Services;
 using Fynexpay.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
@@ -17,40 +18,43 @@ public class HostedCheckoutController : ControllerBase
 {
     private readonly IAppDbContext _db;
     private readonly PaymentService _payments;
+    private readonly IProviderSettingsService _providerSettings;
 
-    public HostedCheckoutController(IAppDbContext db, PaymentService payments)
+    public HostedCheckoutController(IAppDbContext db, PaymentService payments, IProviderSettingsService providerSettings)
     {
         _db = db;
         _payments = payments;
+        _providerSettings = providerSettings;
     }
 
     [HttpGet("/checkout/{paymentId:guid}")]
     public async Task<IActionResult> Page(Guid paymentId, CancellationToken ct)
     {
+        var lang = ResolveLang();
         var payment = await _db.Payments.AsNoTracking()
             .Include(p => p.Merchant)
             .FirstOrDefaultAsync(p => p.Id == paymentId, ct);
 
         if (payment == null)
-            return Content(Render("دفعة غير موجودة", EmptyState("لم يتم العثور على رابط الدفع."), null), "text/html; charset=utf-8");
+            return Content(Render(T(lang, "دفعة غير موجودة", "Payment not found"), EmptyState(T(lang, "لم يتم العثور على رابط الدفع.", "Payment link was not found."), lang), null, lang), "text/html; charset=utf-8");
 
         if (payment.Status == PaymentStatus.Paid)
-            return Content(Render("تم الدفع", Shell(payment, ReturnState(payment, success: true, autoRedirect: false), false), "Paid"), "text/html; charset=utf-8");
+            return Content(Render(T(lang, "تم الدفع", "Paid"), Shell(payment, ReturnState(payment, success: true, autoRedirect: false, lang), false, lang), "Paid", lang), "text/html; charset=utf-8");
 
         if (payment.Status is PaymentStatus.Failed or PaymentStatus.Declined or PaymentStatus.Cancelled or PaymentStatus.Expired)
-            return Content(Render("فشل الدفع", Shell(payment, ReturnState(payment, success: false, autoRedirect: false), false), payment.Status.ToString()), "text/html; charset=utf-8");
+            return Content(Render(T(lang, "فشل الدفع", "Payment failed"), Shell(payment, ReturnState(payment, success: false, autoRedirect: false, lang), false, lang), payment.Status.ToString(), lang), "text/html; charset=utf-8");
 
-        // سبق اختيار مزود — متابعة الدفع
         if (payment.Provider != PaymentProviderType.Auto && !string.IsNullOrWhiteSpace(payment.ProviderCheckoutUrl))
         {
             var cont = $"""
                 <div class="state">
-                  <h2>متابعة الدفع عبر {H(DisplayName(payment.Provider))}</h2>
-                  <p class="muted">تم تجهيز بوابة الدفع. أكمل العملية للانتهاء.</p>
-                  <a class="btn" href="{H(payment.ProviderCheckoutUrl)}">متابعة الدفع</a>
+                  <div class="icon soft">→</div>
+                  <h2>{T(lang, $"متابعة الدفع عبر {H(DisplayName(payment.Provider))}", $"Continue with {H(DisplayName(payment.Provider))}")}</h2>
+                  <p class="muted">{T(lang, "تم تجهيز بوابة الدفع. أكمل العملية للانتهاء.", "Your payment gateway is ready. Continue to finish.")}</p>
+                  <a class="btn" href="{H(payment.ProviderCheckoutUrl)}">{T(lang, "متابعة الدفع", "Continue payment")}</a>
                 </div>
                 """;
-            return Content(Render("متابعة الدفع", Shell(payment, cont, false), "Pending"), "text/html; charset=utf-8");
+            return Content(Render(T(lang, "متابعة الدفع", "Continue payment"), Shell(payment, cont, false, lang), "Pending", lang), "text/html; charset=utf-8");
         }
 
         IReadOnlyList<PaymentProviderType> providers;
@@ -65,21 +69,30 @@ public class HostedCheckoutController : ControllerBase
 
         if (providers.Count == 0)
         {
-            var empty = EmptyState("لا توجد طرق دفع متاحة حالياً. يرجى التواصل مع المتجر.");
-            return Content(Render("الدفع", Shell(payment, empty, false), "Pending"), "text/html; charset=utf-8");
+            var empty = EmptyState(T(lang, "لا توجد طرق دفع متاحة حالياً. يرجى التواصل مع المتجر.", "No payment methods are available. Please contact the store."), lang);
+            return Content(Render(T(lang, "الدفع", "Checkout"), Shell(payment, empty, false, lang), "Pending", lang), "text/html; charset=utf-8");
         }
 
+        var settings = await _providerSettings.GetAsync(ct);
         var cards = new StringBuilder();
         cards.Append("<div class=\"providers\">");
         foreach (var p in providers)
         {
+            var logo = LogoUrl(settings, p);
+            var logoHtml = string.IsNullOrWhiteSpace(logo)
+                ? $"<span class=\"p-fallback\">{H(DisplayName(p)[..1])}</span>"
+                : $"<img class=\"p-logo\" src=\"{H(logo)}\" alt=\"{H(DisplayName(p))}\" />";
+            var choose = T(lang, "اختيار", "Select");
             cards.Append($"""
-                <form method="post" action="/checkout/{paymentId}/pay">
+                <form method="post" action="/checkout/{paymentId}/pay?lang={lang}">
                   <input type="hidden" name="provider" value="{p}" />
                   <button type="submit" class="provider">
-                    <span class="p-name">{H(DisplayName(p))}</span>
-                    <span class="p-desc">{H(ProviderHint(p))}</span>
-                    <span class="p-go">اختيار ←</span>
+                    <span class="p-logo-wrap">{logoHtml}</span>
+                    <span class="p-text">
+                      <span class="p-name">{H(DisplayName(p))}</span>
+                      <span class="p-desc">{H(ProviderHint(p, lang))}</span>
+                    </span>
+                    <span class="p-go"><span>{choose}</span><i aria-hidden="true">←</i></span>
                   </button>
                 </form>
                 """);
@@ -91,32 +104,34 @@ public class HostedCheckoutController : ControllerBase
 
         var body = $"""
             <div class="choose">
-              <h2>اختر طريقة الدفع</h2>
-              <p class="muted">ادفع بأمان عبر أحد المزودين المعتمدين</p>
+              <div class="choose-head">
+                <h2>{T(lang, "اختر طريقة الدفع", "Choose payment method")}</h2>
+                <p class="muted">
+                  <svg class="shield" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5l8-3z" stroke="#6c3cec" stroke-width="1.8"/><path d="M9.5 12.2l1.8 1.8 3.8-3.8" stroke="#6c3cec" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  {T(lang, "ادفع بأمان عبر أحد المزودين المعتمدين", "Pay securely through a trusted provider")}
+                </p>
+              </div>
               {errHtml}
               {cards}
             </div>
             """;
 
-        return Content(Render("إتمام الدفع", Shell(payment, body, true), "Pending"), "text/html; charset=utf-8");
+        return Content(Render(T(lang, "إتمام الدفع", "Checkout"), Shell(payment, body, true, lang), "Pending", lang), "text/html; charset=utf-8");
     }
 
-    /// <summary>
-    /// عودة المزود للمنصة أولاً، ثم التحويل لرابط التاجر (successUrl / failureUrl).
-    /// </summary>
     [HttpGet("/checkout/{paymentId:guid}/return")]
     public async Task<IActionResult> ProviderReturn(Guid paymentId, [FromQuery] string? result, CancellationToken ct)
     {
+        var lang = ResolveLang();
         var payment = await _db.Payments
             .Include(p => p.Merchant)
             .FirstOrDefaultAsync(p => p.Id == paymentId, ct);
 
         if (payment == null)
-            return Content(Render("دفعة غير موجودة", EmptyState("لم يتم العثور على رابط الدفع."), null), "text/html; charset=utf-8");
+            return Content(Render(T(lang, "دفعة غير موجودة", "Payment not found"), EmptyState(T(lang, "لم يتم العثور على رابط الدفع.", "Payment link was not found."), lang), null, lang), "text/html; charset=utf-8");
 
         var wantsSuccess = string.Equals(result, "success", StringComparison.OrdinalIgnoreCase);
 
-        // حاول مزامنة الحالة من المزود إن كانت لا تزال معلّقة
         if (payment.Status == PaymentStatus.Pending &&
             payment.Provider != PaymentProviderType.Auto &&
             !string.IsNullOrWhiteSpace(payment.ProviderPaymentId))
@@ -129,65 +144,130 @@ public class HostedCheckoutController : ControllerBase
             }
             catch
             {
-                // نعرض صفحة العودة حتى لو فشلت المزامنة
             }
         }
 
         var success = payment.Status == PaymentStatus.Paid ||
                       (wantsSuccess && payment.Status is PaymentStatus.Pending);
-        var html = ReturnState(payment, success: success, autoRedirect: true);
-        var title = success ? "تم الدفع" : "نتيجة الدفع";
-        return Content(Render(title, Shell(payment, html, false), success ? "Paid" : "Failed"), "text/html; charset=utf-8");
+        var html = ReturnState(payment, success: success, autoRedirect: true, lang);
+        var title = success ? T(lang, "تم الدفع", "Paid") : T(lang, "نتيجة الدفع", "Payment result");
+        return Content(Render(title, Shell(payment, html, false, lang), success ? "Paid" : "Failed", lang), "text/html; charset=utf-8");
     }
 
     [HttpPost("/checkout/{paymentId:guid}/pay")]
     public async Task<IActionResult> Pay(Guid paymentId, [FromForm] string provider, CancellationToken ct)
     {
+        var lang = ResolveLang();
         try
         {
             var result = await _payments.InitiateAsync(paymentId, provider, ct);
             if (!string.IsNullOrWhiteSpace(result.ProviderCheckoutUrl))
                 return Redirect(result.ProviderCheckoutUrl);
 
-            return Redirect($"/checkout/{paymentId}");
+            return Redirect($"/checkout/{paymentId}?lang={lang}");
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
-            return Redirect($"/checkout/{paymentId}?error={Uri.EscapeDataString(ex.Message)}");
+            return Redirect($"/checkout/{paymentId}?lang={lang}&error={Uri.EscapeDataString(ex.Message)}");
         }
     }
 
-    private static string Shell(Domain.Entities.Payment payment, string inner, bool showProviders)
+    private string ResolveLang()
     {
-        var amount = payment.Amount.ToString("N0", CultureInfo.GetCultureInfo("ar-IQ"));
-        var merchant = payment.Merchant?.BusinessNameAr;
-        if (string.IsNullOrWhiteSpace(merchant))
-            merchant = payment.Merchant?.BusinessName ?? "متجر";
+        var q = Request.Query["lang"].FirstOrDefault();
+        return string.Equals(q, "en", StringComparison.OrdinalIgnoreCase) ? "en" : "ar";
+    }
+
+    private static string T(string lang, string ar, string en) => lang == "en" ? en : ar;
+
+    private string Shell(Domain.Entities.Payment payment, string inner, bool showProviders, string lang)
+    {
+        var culture = lang == "en" ? CultureInfo.GetCultureInfo("en-IQ") : CultureInfo.GetCultureInfo("ar-IQ");
+        var amount = payment.Amount.ToString("N0", culture);
+        var amountWords = lang == "en"
+            ? $"{payment.Amount:N0} Iraqi Dinars"
+            : AmountToArabicWords(payment.Amount);
+        var txId = payment.Id.ToString("N")[..8].ToUpperInvariant();
+        var orderId = string.IsNullOrWhiteSpace(payment.MerchantOrderId) ? "—" : payment.MerchantOrderId;
+        var otherLang = lang == "ar" ? "en" : "ar";
+        var langLabel = lang == "ar" ? "العربية" : "English";
+        var path = Request.Path.Value ?? $"/checkout/{payment.Id}";
+        var switchUrl = $"{path}?lang={otherLang}";
 
         return $"""
-            <div class="wrap">
-              <header class="top">
-                <div class="brand">Fynex<span>pay</span></div>
-                <div class="secure">دفع آمن</div>
-              </header>
-              <section class="summary">
-                <p class="merchant">{H(merchant)}</p>
-                <h1 class="amount">{H(amount)} <small>د.ع</small></h1>
-                <p class="service">{H(payment.Description ?? "خدمة")}</p>
-                <div class="meta">
-                  <div><span>رقم العملية</span><strong class="ltr">{payment.Id.ToString("N")[..8].ToUpperInvariant()}</strong></div>
-                  <div><span>رقم الطلب</span><strong class="ltr">{H(payment.MerchantOrderId)}</strong></div>
+            <div class="page">
+              <div class="page-tools">
+                <a class="lang" href="{H(switchUrl)}" title="Language">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M3 12h18M12 3c2.5 2.8 3.8 5.8 3.8 9S14.5 18.2 12 21c-2.5-2.8-3.8-5.8-3.8-9S9.5 5.8 12 3z" stroke="currentColor" stroke-width="1.7"/></svg>
+                  <span>{langLabel}</span>
+                  <span class="lang-caret" aria-hidden="true">▾</span>
+                </a>
+              </div>
+
+              <div class="brand-lockup">
+                <img class="brand-logo" src="/full-logo.png" alt="Fynexpay" width="180" height="41" />
+              </div>
+
+              <article class="card">
+                <section class="hero">
+                  <div class="hero-top">
+                    <span class="secure">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5l8-3z" stroke="currentColor" stroke-width="1.8"/><path d="M9.5 12.2l1.8 1.8 3.8-3.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      {T(lang, "دفع آمن", "Secure payment")}
+                    </span>
+                    <span class="currency-badge" aria-hidden="true">$</span>
+                  </div>
+                  <div class="amount-block">
+                    <p class="amount-label">{T(lang, "المبلغ المطلوب", "Amount due")}</p>
+                    <h1 class="amount"><span class="num ltr">{H(amount)}</span> <small>{T(lang, "د.ع", "IQD")}</small></h1>
+                    <p class="amount-words">{H(amountWords)}</p>
+                  </div>
+                  <div class="meta">
+                    <div class="meta-box">
+                      <span>{T(lang, "رقم العملية", "Transaction ID")}</span>
+                      <div class="meta-val">
+                        <strong class="ltr" id="txId">{H(txId)}</strong>
+                        <button type="button" class="copy" data-copy="{H(txId)}" aria-label="copy">
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M5 15V5a2 2 0 0 1 2-2h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="meta-box">
+                      <span>{T(lang, "رقم الطلب", "Order ID")}</span>
+                      <div class="meta-val">
+                        <strong class="ltr" id="orderId">{H(orderId)}</strong>
+                        <button type="button" class="copy" data-copy="{H(orderId)}" aria-label="copy">
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M5 15V5a2 2 0 0 1 2-2h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+                <section class="body">
+                  {inner}
+                </section>
+              </article>
+
+              <footer class="foot">
+                <div class="foot-brand">
+                  <img class="foot-logo" src="/icon-logo.png" alt="" width="18" height="13" />
+                  {T(lang, "مدعوم بواسطة", "Powered by")} <strong>Fynexpay</strong>
                 </div>
-              </section>
-              {inner}
-              <footer class="foot">مدعوم بواسطة Fynexpay · بوابة دفع عراقية</footer>
+                <span class="foot-sep" aria-hidden="true"></span>
+                <div class="foot-secure">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 11V8a5 5 0 0 1 10 0v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><rect x="5" y="11" width="14" height="10" rx="2.5" stroke="currentColor" stroke-width="1.8"/></svg>
+                  {T(lang, "جميع البيانات مشفرة وآمنة", "All data is encrypted and secure")}
+                </div>
+              </footer>
             </div>
+            <script src="/checkout-copy.js"></script>
             """;
     }
 
-    private static string EmptyState(string text) => $"<div class=\"state\"><p>{H(text)}</p></div>";
+    private static string EmptyState(string text, string lang) =>
+        $"<div class=\"state\"><div class=\"icon soft\">!</div><p>{H(text)}</p></div>";
 
-    private static string ReturnState(Domain.Entities.Payment payment, bool success, bool autoRedirect)
+    private static string ReturnState(Domain.Entities.Payment payment, bool success, bool autoRedirect, string lang)
     {
         var merchantUrl = ResolveMerchantReturnUrl(payment, success);
         var hasMerchant = !string.IsNullOrWhiteSpace(merchantUrl);
@@ -199,10 +279,13 @@ public class HostedCheckoutController : ControllerBase
         {
             var urlJson = System.Text.Json.JsonSerializer.Serialize(merchantUrl);
             var btnClass = success ? "btn" : "btn ghost";
+            var note = T(lang, "جاري إعادتك إلى المتجر خلال", "Returning you to the store in");
+            var now = T(lang, "العودة للمتجر الآن", "Return to store now");
+            var sec = T(lang, "ثانية", "seconds");
             redirectBlock =
-                "<p class=\"muted redirect-note\">جاري إعادتك إلى المتجر خلال <strong id=\"cd\">" + delaySec +
-                "</strong> ثانية…</p>" +
-                "<a class=\"" + btnClass + "\" href=\"" + H(merchantUrl) + "\">العودة للمتجر الآن</a>" +
+                "<p class=\"muted redirect-note\">" + note + " <strong id=\"cd\">" + delaySec +
+                "</strong> " + sec + "…</p>" +
+                "<a class=\"" + btnClass + "\" href=\"" + H(merchantUrl) + "\">" + now + "</a>" +
                 "<script>(function(){var s=" + delaySec + ";var el=document.getElementById('cd');" +
                 "var t=setInterval(function(){s-=1;if(el)el.textContent=String(s);" +
                 "if(s<=0){clearInterval(t);location.href=" + urlJson + ";}},1000);" +
@@ -214,8 +297,8 @@ public class HostedCheckoutController : ControllerBase
             return $"""
                 <div class="state ok">
                   <div class="icon">✓</div>
-                  <h1>تم الدفع بنجاح</h1>
-                  <p>تمت العملية عبر Fynexpay{(payment.Provider != PaymentProviderType.Auto ? $" · {H(DisplayName(payment.Provider))}" : "")}</p>
+                  <h1>{T(lang, "تم الدفع بنجاح", "Payment successful")}</h1>
+                  <p>{T(lang, "تمت العملية عبر Fynexpay", "Processed via Fynexpay")}{(payment.Provider != PaymentProviderType.Auto ? $" · {H(DisplayName(payment.Provider))}" : "")}</p>
                   {redirectBlock}
                 </div>
                 """;
@@ -224,8 +307,8 @@ public class HostedCheckoutController : ControllerBase
         return $"""
             <div class="state bad">
               <div class="icon">!</div>
-              <h1>لم تكتمل العملية</h1>
-              <p>{H(payment.FailureReason ?? "تعذّر إتمام الدفع")}</p>
+              <h1>{T(lang, "لم تكتمل العملية", "Payment incomplete")}</h1>
+              <p>{H(payment.FailureReason ?? T(lang, "تعذّر إتمام الدفع", "Could not complete the payment"))}</p>
               {redirectBlock}
             </div>
             """;
@@ -239,7 +322,6 @@ public class HostedCheckoutController : ControllerBase
         if (!string.IsNullOrWhiteSpace(payment.FailureUrl))
             return payment.FailureUrl;
 
-        // إن لم يُرسل failureUrl نرجع لـ successUrl مع علامة فشل حتى لا يبقى الزبون عالقاً
         if (string.IsNullOrWhiteSpace(payment.SuccessUrl))
             return null;
 
@@ -250,107 +332,288 @@ public class HostedCheckoutController : ControllerBase
     private static string DisplayName(PaymentProviderType p) => p switch
     {
         PaymentProviderType.Fib => "FIB",
-        PaymentProviderType.ZainCash => "ZainCash",
+        PaymentProviderType.ZainCash => "Zain Cash",
         PaymentProviderType.Qi => "QI Card",
         PaymentProviderType.SuperQi => "SuperQi",
         _ => p.ToString()
     };
 
-    private static string ProviderHint(PaymentProviderType p) => p switch
+    private static string ProviderHint(PaymentProviderType p, string lang) => (p, lang) switch
     {
-        PaymentProviderType.Fib => "ادفع عبر تطبيق First Iraqi Bank",
-        PaymentProviderType.ZainCash => "محفظة زين كاش",
-        PaymentProviderType.Qi => "بطاقات QI والبطاقات البنكية",
-        PaymentProviderType.SuperQi => "ادفع عبر تطبيق SuperQi (ALIPAY)",
+        (PaymentProviderType.Fib, "en") => "Pay via First Iraqi Bank app",
+        (PaymentProviderType.Fib, _) => "ادفع عبر تطبيق First Iraqi Bank",
+        (PaymentProviderType.ZainCash, "en") => "Pay via Zain Cash wallet",
+        (PaymentProviderType.ZainCash, _) => "ادفع عبر محفظة زين كاش",
+        (PaymentProviderType.Qi, "en") => "Pay with QI and bank cards",
+        (PaymentProviderType.Qi, _) => "بطاقات QI والبطاقات البنكية",
+        (PaymentProviderType.SuperQi, "en") => "Pay via SuperQi (ALIPAY)",
+        (PaymentProviderType.SuperQi, _) => "ادفع عبر تطبيق SuperQi (ALIPAY)",
+        (_, "en") => "Payment provider",
         _ => "مزود دفع"
     };
 
+    private static string? LogoUrl(ProviderRuntimeSettings s, PaymentProviderType p)
+    {
+        var custom = p switch
+        {
+            PaymentProviderType.Fib => s.Fib.LogoUrl,
+            PaymentProviderType.ZainCash => s.ZainCash.LogoUrl,
+            PaymentProviderType.Qi => s.Qi.LogoUrl,
+            PaymentProviderType.SuperQi => s.SuperQi.LogoUrl,
+            _ => null
+        };
+        if (!string.IsNullOrWhiteSpace(custom)) return custom;
+        return p switch
+        {
+            PaymentProviderType.Fib => "/providers/fib.svg",
+            PaymentProviderType.ZainCash => "/providers/zaincash.svg",
+            PaymentProviderType.Qi => "/providers/qi.svg",
+            PaymentProviderType.SuperQi => "/providers/superqi.svg",
+            _ => null
+        };
+    }
+
     private static string H(string? value) => WebUtility.HtmlEncode(value ?? "");
 
-    private static string Render(string title, string body, string? status)
+    private static string AmountToArabicWords(decimal amount)
     {
+        var n = (long)Math.Floor(Math.Abs(amount));
+        if (n == 0) return "صفر دينار عراقي";
+        return $"{ToArabicWords(n)} دينار عراقي";
+    }
+
+    private static string ToArabicWords(long number)
+    {
+        if (number == 0) return "صفر";
+        string[] ones = ["", "واحد", "اثنان", "ثلاثة", "أربعة", "خمسة", "ستة", "سبعة", "ثمانية", "تسعة", "عشرة", "أحد عشر", "اثنا عشر", "ثلاثة عشر", "أربعة عشر", "خمسة عشر", "ستة عشر", "سبعة عشر", "ثمانية عشر", "تسعة عشر"];
+        string[] tens = ["", "", "عشرون", "ثلاثون", "أربعون", "خمسون", "ستون", "سبعون", "ثمانون", "تسعون"];
+        string[] hundreds = ["", "مائة", "مائتان", "ثلاثمائة", "أربعمائة", "خمسمائة", "ستمائة", "سبعمائة", "ثمانمائة", "تسعمائة"];
+
+        string BelowThousand(long n)
+        {
+            if (n == 0) return "";
+            var parts = new List<string>();
+            var h = n / 100;
+            var r = n % 100;
+            if (h > 0) parts.Add(hundreds[h]);
+            if (r > 0)
+            {
+                if (r < 20) parts.Add(ones[r]);
+                else
+                {
+                    var t = r / 10;
+                    var o = r % 10;
+                    if (o > 0) parts.Add($"{ones[o]} و{tens[t]}");
+                    else parts.Add(tens[t]);
+                }
+            }
+            return string.Join(" و", parts.Where(x => !string.IsNullOrWhiteSpace(x)));
+        }
+
+        var result = new List<string>();
+        var millions = number / 1_000_000;
+        var thousands = (number % 1_000_000) / 1000;
+        var rest = number % 1000;
+
+        if (millions > 0)
+        {
+            if (millions == 1) result.Add("مليون");
+            else if (millions == 2) result.Add("مليونان");
+            else if (millions is >= 3 and <= 10) result.Add($"{BelowThousand(millions)} ملايين");
+            else result.Add($"{BelowThousand(millions)} مليون");
+        }
+
+        if (thousands > 0)
+        {
+            if (thousands == 1) result.Add("ألف");
+            else if (thousands == 2) result.Add("ألفان");
+            else if (thousands is >= 3 and <= 10) result.Add($"{BelowThousand(thousands)} آلاف");
+            else result.Add($"{BelowThousand(thousands)} ألف");
+        }
+
+        if (rest > 0) result.Add(BelowThousand(rest));
+        return string.Join(" و", result);
+    }
+
+    private static string Render(string title, string body, string? status, string lang)
+    {
+        var dir = lang == "en" ? "ltr" : "rtl";
+        var htmlLang = lang == "en" ? "en" : "ar";
         return $$"""
             <!DOCTYPE html>
-            <html lang="ar" dir="rtl">
+            <html lang="{{htmlLang}}" dir="{{dir}}">
             <head>
               <meta charset="utf-8" />
               <meta name="viewport" content="width=device-width, initial-scale=1" />
               <title>{{WebUtility.HtmlEncode(title)}} · Fynexpay</title>
-              <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+              <link rel="icon" type="image/png" href="/icon-logo.png" />
+              <link rel="preconnect" href="https://fonts.googleapis.com" />
+              <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet" />
               <style>
-                :root {
-                  --ink:#10241f; --muted:#5d6f69; --line:#d9e4df;
-                  --brand:#0c6b5c; --brand-2:#14967f; --sand:#f3f7f5;
-                  --ok:#0f7a45; --bad:#b42318;
+                :root{
+                  --ink:#031838; --muted:#5b6b86; --line:#e2e8f2;
+                  --brand:#6c3cec; --brand-soft:rgba(108,60,236,.12);
+                  --navy:#031838; --ok:#12b76a; --bad:#f04438;
+                  --shadow:0 24px 60px rgba(3,24,56,.12);
                 }
                 *{box-sizing:border-box}
                 body{
-                  margin:0;min-height:100vh;font-family:"IBM Plex Sans Arabic",Tahoma,sans-serif;
+                  margin:0;min-height:100vh;
+                  font-family: {{(lang == "en" ? "\"Plus Jakarta Sans\",\"Cairo\",sans-serif" : "\"Cairo\",\"Plus Jakarta Sans\",sans-serif")}};
                   color:var(--ink);
                   background:
-                    radial-gradient(1200px 500px at 100% -10%, rgba(20,150,127,.18), transparent 55%),
-                    radial-gradient(900px 420px at -10% 110%, rgba(12,107,92,.14), transparent 50%),
-                    linear-gradient(165deg,#e8f2ef 0%, #f7faf9 45%, #eef4f1 100%);
+                    radial-gradient(900px 420px at 85% -5%, rgba(108,60,236,.10), transparent 55%),
+                    radial-gradient(700px 380px at 5% 100%, rgba(3,24,56,.06), transparent 50%),
+                    #f4f6fb;
+                  position:relative;
+                  overflow-x:hidden;
                 }
-                .wrap{width:min(520px,94vw);margin:32px auto 40px}
-                .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
-                .brand{font-size:1.35rem;font-weight:700;letter-spacing:-.02em}
-                .brand span{color:var(--brand)}
-                .secure{font-size:.85rem;color:var(--brand);background:rgba(12,107,92,.1);padding:6px 12px;border-radius:999px;font-weight:600}
-                .summary{
-                  background:linear-gradient(145deg,#0c6b5c,#0a5549 60%,#083f36);
-                  color:#f4fffb;border-radius:28px;padding:28px 24px 22px;
-                  box-shadow:0 18px 40px rgba(8,63,54,.28);
-                  position:relative;overflow:hidden;
+                body:before, body:after{
+                  content:"";position:fixed;pointer-events:none;z-index:0;
+                  width:520px;height:520px;border-radius:50%;
+                  border:1px solid rgba(108,60,236,.08);
                 }
-                .summary:before{
-                  content:"";position:absolute;inset:auto -20% -40% auto;width:220px;height:220px;
-                  background:radial-gradient(circle,rgba(255,255,255,.16),transparent 65%);
+                body:before{top:-180px;inset-inline-end:-160px;box-shadow:0 0 0 60px rgba(108,60,236,.03), inset 0 0 0 80px rgba(3,24,56,.02)}
+                body:after{bottom:-220px;inset-inline-start:-180px;box-shadow:0 0 0 40px rgba(3,24,56,.02)}
+                .page{position:relative;z-index:1;width:min(520px,94vw);margin:28px auto 36px}
+                .page-tools{display:flex;justify-content:flex-end;margin-bottom:10px}
+                .lang{
+                  display:inline-flex;align-items:center;gap:6px;
+                  color:var(--muted);text-decoration:none;font-weight:700;font-size:.9rem;
+                  background:#fff;border:1px solid var(--line);border-radius:999px;padding:7px 12px;
+                  box-shadow:0 4px 14px rgba(3,24,56,.04);
                 }
-                .merchant{margin:0;opacity:.85;font-weight:500}
-                .amount{margin:10px 0 4px;font-size:2.4rem;font-weight:700;letter-spacing:-.03em}
-                .amount small{font-size:1rem;font-weight:600;opacity:.85}
-                .service{margin:0 0 18px;opacity:.92}
-                .meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;position:relative}
-                .meta > div{background:rgba(255,255,255,.1);border-radius:14px;padding:10px 12px}
-                .meta span{display:block;font-size:.78rem;opacity:.75;margin-bottom:4px}
+                .lang:hover{color:var(--brand);border-color:rgba(108,60,236,.3)}
+                .lang-caret{font-size:.7rem;opacity:.7}
+                .brand-lockup{
+                  display:flex;align-items:center;justify-content:center;margin:8px 0 18px;
+                }
+                .brand-logo{
+                  display:block;height:40px;width:auto;max-width:min(220px,70vw);
+                  object-fit:contain;
+                }
+                .foot-logo{
+                  display:block;height:16px;width:auto;object-fit:contain;
+                }
+                .card{
+                  background:#fff;border-radius:28px;overflow:hidden;
+                  box-shadow:var(--shadow);border:1px solid rgba(226,232,242,.9);
+                }
+                .hero{
+                  background:
+                    radial-gradient(420px 180px at 100% 0%, rgba(255,255,255,.18), transparent 55%),
+                    linear-gradient(145deg,#7b4dff 0%, #6c3cec 45%, #5a2fd4 100%);
+                  color:#fff;padding:22px 22px 18px;position:relative;overflow:hidden;
+                }
+                .hero:before{
+                  content:"";position:absolute;inset:0;opacity:.22;pointer-events:none;
+                  background:
+                    radial-gradient(circle at 20% 120%, transparent 0 38%, rgba(255,255,255,.35) 39% 40%, transparent 41%),
+                    radial-gradient(circle at 80% -20%, transparent 0 40%, rgba(255,255,255,.25) 41% 42%, transparent 43%),
+                    repeating-linear-gradient(-18deg, transparent 0 18px, rgba(255,255,255,.07) 18px 19px);
+                }
+                .hero > *{position:relative}
+                .hero-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+                .secure{
+                  display:inline-flex;align-items:center;gap:6px;
+                  background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.22);
+                  backdrop-filter:blur(6px);border-radius:999px;padding:6px 12px;font-size:.82rem;font-weight:700;
+                }
+                .currency-badge{
+                  width:36px;height:36px;border-radius:50%;display:grid;place-items:center;
+                  background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);
+                  font-family:"Plus Jakarta Sans",sans-serif;font-weight:800;
+                }
+                .amount-block{text-align:center;margin-bottom:18px}
+                .amount-label{margin:0 0 6px;opacity:.9;font-weight:600;font-size:.95rem}
+                .amount{margin:0;font-size:2.55rem;font-weight:800;letter-spacing:-.03em;line-height:1.1}
+                .amount .num{font-variant-numeric:tabular-nums}
+                .amount small{font-size:1.05rem;font-weight:700;opacity:.95}
+                .amount-words{margin:8px 0 0;opacity:.88;font-size:.92rem;font-weight:600}
+                .meta{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+                .meta-box{
+                  background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);
+                  border-radius:16px;padding:10px 12px;min-width:0;
+                }
+                .meta-box span{display:block;font-size:.75rem;opacity:.85;margin-bottom:4px;font-weight:600}
+                .meta-val{display:flex;align-items:center;justify-content:space-between;gap:8px}
+                .meta-val strong{
+                  font-size:.88rem;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+                }
+                .copy{
+                  border:0;background:rgba(255,255,255,.14);color:#fff;border-radius:10px;
+                  width:30px;height:30px;display:grid;place-items:center;cursor:pointer;flex-shrink:0;
+                }
+                .copy:hover,.copy.ok{background:rgba(255,255,255,.28)}
                 .ltr{direction:ltr;unicode-bidi:plaintext}
-                .choose,.state{
-                  margin-top:16px;background:#fff;border:1px solid var(--line);
-                  border-radius:24px;padding:22px;box-shadow:0 10px 30px rgba(16,36,31,.06);
+                .body{padding:22px}
+                .choose-head{margin-bottom:14px}
+                .choose h2{margin:0 0 6px;font-size:1.15rem;color:var(--navy);font-weight:800}
+                .choose .muted{
+                  margin:0;color:var(--muted);display:flex;align-items:center;gap:6px;font-size:.9rem;font-weight:600;
                 }
-                .choose h2,.state h1,.state h2{margin:0 0 6px}
-                .muted{color:var(--muted);margin:0 0 16px}
+                .shield{font-size:.95rem}
                 .providers{display:grid;gap:10px}
                 .provider{
-                  width:100%;text-align:right;border:1px solid var(--line);background:var(--sand);
-                  border-radius:18px;padding:16px 16px 14px;cursor:pointer;font:inherit;
-                  display:grid;gap:4px;transition:.18s ease;position:relative;
+                  width:100%;text-align:inherit;border:1px solid var(--line);background:#fff;
+                  border-radius:16px;padding:12px 14px;cursor:pointer;font:inherit;
+                  display:flex;align-items:center;gap:12px;transition:.18s ease;
                 }
-                .provider:hover{border-color:rgba(12,107,92,.45);background:#fff;transform:translateY(-1px);box-shadow:0 8px 18px rgba(12,107,92,.08)}
-                .p-name{font-weight:700;font-size:1.05rem}
-                .p-desc{color:var(--muted);font-size:.92rem}
-                .p-go{color:var(--brand);font-weight:700;margin-top:6px}
+                .provider:hover{
+                  border-color:rgba(108,60,236,.35);
+                  box-shadow:0 10px 24px rgba(108,60,236,.10);
+                  transform:translateY(-1px);
+                }
+                .p-logo-wrap{
+                  width:48px;height:48px;border-radius:14px;background:#f8fafc;border:1px solid var(--line);
+                  display:grid;place-items:center;flex-shrink:0;overflow:hidden;
+                }
+                .p-logo{width:100%;height:100%;object-fit:contain;padding:6px}
+                .p-fallback{font-weight:800;color:var(--brand);font-size:1.1rem}
+                .p-text{display:grid;gap:2px;flex:1;min-width:0;text-align:start}
+                .p-name{font-weight:800;font-size:1rem;color:var(--navy)}
+                .p-desc{color:var(--muted);font-size:.86rem;font-weight:600}
+                .p-go{
+                  display:inline-flex;align-items:center;gap:6px;
+                  background:var(--brand-soft);color:var(--brand);
+                  border-radius:12px;padding:9px 12px;font-weight:800;font-size:.88rem;white-space:nowrap;
+                }
+                .p-go i{font-style:normal;font-family:"Plus Jakarta Sans",sans-serif}
+                html[dir="ltr"] .p-go i{display:inline-block;transform:scaleX(-1)}
                 .btn{
                   display:inline-flex;align-items:center;justify-content:center;margin-top:14px;
                   background:var(--brand);color:#fff;text-decoration:none;border-radius:14px;
-                  padding:12px 18px;font-weight:700;
+                  padding:12px 20px;font-weight:800;box-shadow:0 12px 28px rgba(108,60,236,.28);
                 }
-                .btn.ghost{background:transparent;color:var(--bad);border:1px solid #efc4c0}
-                .state{text-align:center}
+                .btn.ghost{background:transparent;color:var(--bad);border:1px solid #efc4c0;box-shadow:none}
+                .state{text-align:center;padding:8px 0}
+                .state h1,.state h2{margin:0 0 8px;font-size:1.25rem}
+                .state p{margin:0;color:var(--muted);font-weight:600}
                 .state .icon{
                   width:56px;height:56px;border-radius:50%;display:grid;place-items:center;margin:0 auto 12px;
-                  font-size:1.4rem;font-weight:700;
+                  font-size:1.4rem;font-weight:800;
                 }
-                .state.ok .icon{background:rgba(15,122,69,.12);color:var(--ok)}
-                .state.bad .icon{background:rgba(180,35,24,.1);color:var(--bad)}
-                .error{background:#fff1f0;color:var(--bad);border:1px solid #f0c9c5;border-radius:12px;padding:10px 12px;margin-bottom:12px;font-weight:600}
-                .redirect-note{margin-top:8px!important}
-                .foot{margin-top:18px;text-align:center;color:var(--muted);font-size:.85rem}
+                .state .icon.soft{background:var(--brand-soft);color:var(--brand)}
+                .state.ok .icon{background:rgba(18,183,106,.12);color:var(--ok)}
+                .state.bad .icon{background:rgba(240,68,56,.1);color:var(--bad)}
+                .error{background:#fff1f0;color:var(--bad);border:1px solid #f0c9c5;border-radius:12px;padding:10px 12px;margin-bottom:12px;font-weight:700}
+                .redirect-note{margin-top:12px!important}
+                .foot{
+                  margin-top:18px;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px 14px;
+                  color:var(--muted);font-size:.85rem;font-weight:700;
+                }
+                .foot-brand,.foot-secure{display:inline-flex;align-items:center;gap:6px}
+                .foot-brand strong{color:var(--navy);font-family:"Plus Jakarta Sans",sans-serif}
+                .foot-sep{width:1px;height:14px;background:#c9d2e3}
                 form{margin:0}
+                @media (max-width:520px){
+                  .amount{font-size:2.1rem}
+                  .meta{grid-template-columns:1fr}
+                  .foot-sep{display:none}
+                }
               </style>
             </head>
-            <body>{{body}}</body>
+            <body data-status="{{WebUtility.HtmlEncode(status ?? "")}}">{{body}}</body>
             </html>
             """;
     }

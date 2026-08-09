@@ -12,6 +12,8 @@ public static class DependencyInjection
         services.AddScoped<WalletService>();
         services.AddScoped<PayoutService>();
         services.AddScoped<MerchantAdminService>();
+        services.AddScoped<MerchantPlatformService>();
+        services.AddScoped<LandingContentService>();
         return services;
     }
 }

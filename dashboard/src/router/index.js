@@ -15,13 +15,16 @@ const routes = [
       { path: 'merchant/test', name: 'merchant-test', component: () => import('../views/merchant/PaymentTest.vue'), meta: { merchant: true } },
       { path: 'merchant/payment-methods', name: 'merchant-methods', component: () => import('../views/merchant/PaymentMethods.vue'), meta: { merchant: true } },
       { path: 'merchant/payments', name: 'merchant-payments', component: () => import('../views/merchant/Payments.vue'), meta: { merchant: true } },
+      { path: 'merchant/platforms', name: 'merchant-platforms', component: () => import('../views/merchant/Platforms.vue'), meta: { merchant: true } },
       { path: 'merchant/keys', name: 'merchant-keys', component: () => import('../views/merchant/ApiKeys.vue'), meta: { merchant: true } },
       { path: 'merchant/payouts', name: 'merchant-payouts', component: () => import('../views/merchant/Payouts.vue'), meta: { merchant: true } },
       { path: 'admin', name: 'admin-overview', component: () => import('../views/admin/Overview.vue'), meta: { admin: true } },
       { path: 'admin/merchants', name: 'admin-merchants', component: () => import('../views/admin/Merchants.vue'), meta: { admin: true } },
+      { path: 'admin/platforms', name: 'admin-platforms', component: () => import('../views/admin/Platforms.vue'), meta: { admin: true } },
       { path: 'admin/payments', name: 'admin-payments', component: () => import('../views/admin/Payments.vue'), meta: { admin: true } },
       { path: 'admin/payouts', name: 'admin-payouts', component: () => import('../views/admin/Payouts.vue'), meta: { admin: true } },
-      { path: 'admin/providers', name: 'admin-providers', component: () => import('../views/admin/Providers.vue'), meta: { admin: true } }
+      { path: 'admin/providers', name: 'admin-providers', component: () => import('../views/admin/Providers.vue'), meta: { admin: true } },
+      { path: 'admin/landing', name: 'admin-landing', component: () => import('../views/admin/Landing.vue'), meta: { admin: true } }
     ]
   }
 ]

@@ -50,6 +50,7 @@ public class ProviderSettingsService : IProviderSettingsService
             await PersistAsync(settings, ct);
         }
 
+        Normalize(settings);
         _cache = settings;
         return Clone(settings);
     }
@@ -87,21 +88,30 @@ public class ProviderSettingsService : IProviderSettingsService
         settings.ActiveEnvironment = "Test";
         settings.UseMockWhenMissingCredentials = true;
 
+        var qiLogo = settings.Qi?.LogoUrl;
+        var superQiLogo = settings.SuperQi?.LogoUrl;
+        var zainLogo = settings.ZainCash?.LogoUrl;
+        var fibLogo = settings.Fib?.LogoUrl;
+
         settings.Qi = ProviderBundleSettings.DefaultQi();
         settings.Qi.Enabled = true;
         settings.Qi.Priority = 0;
+        settings.Qi.LogoUrl = qiLogo;
 
         settings.SuperQi = ProviderBundleSettings.DefaultSuperQi();
         settings.SuperQi.Enabled = true;
         settings.SuperQi.Priority = 3;
+        settings.SuperQi.LogoUrl = superQiLogo;
 
         settings.ZainCash = ProviderBundleSettings.DefaultZainCash();
         settings.ZainCash.Enabled = true;
         settings.ZainCash.Priority = 1;
+        settings.ZainCash.LogoUrl = zainLogo;
 
         settings.Fib ??= ProviderBundleSettings.DefaultFib();
         settings.Fib.Enabled = true;
         settings.Fib.Priority = 2;
+        settings.Fib.LogoUrl = fibLogo;
         settings.Fib.Test ??= new ProviderEnvCredentials();
         settings.Fib.Test.AuthUrl = "https://fib.stage.fib.iq/auth/realms/fib-online-shop/protocol/openid-connect/token";
         settings.Fib.Test.BaseUrl = "https://fib.stage.fib.iq/protected/v1";
@@ -249,6 +259,10 @@ public class ProviderSettingsService : IProviderSettingsService
         s.Qi.Production ??= new ProviderEnvCredentials();
         s.SuperQi.Test ??= new ProviderEnvCredentials();
         s.SuperQi.Production ??= new ProviderEnvCredentials();
+        if (string.IsNullOrWhiteSpace(s.Fib.LogoUrl)) s.Fib.LogoUrl = "/providers/fib.svg";
+        if (string.IsNullOrWhiteSpace(s.ZainCash.LogoUrl)) s.ZainCash.LogoUrl = "/providers/zaincash.svg";
+        if (string.IsNullOrWhiteSpace(s.Qi.LogoUrl)) s.Qi.LogoUrl = "/providers/qi.svg";
+        if (string.IsNullOrWhiteSpace(s.SuperQi.LogoUrl)) s.SuperQi.LogoUrl = "/providers/superqi.svg";
     }
 
     private static ProviderRuntimeSettings Clone(ProviderRuntimeSettings s) =>

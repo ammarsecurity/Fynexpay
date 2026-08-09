@@ -7,6 +7,7 @@ public interface IAppDbContext
 {
     DbSet<User> Users { get; }
     DbSet<Merchant> Merchants { get; }
+    DbSet<MerchantPlatform> MerchantPlatforms { get; }
     DbSet<ApiKey> ApiKeys { get; }
     DbSet<Wallet> Wallets { get; }
     DbSet<WalletLedgerEntry> WalletLedgerEntries { get; }

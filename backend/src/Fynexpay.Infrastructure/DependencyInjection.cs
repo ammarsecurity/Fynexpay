@@ -96,6 +96,44 @@ public static class DependencyInjection
         await EnsureColumnAsync(db, "Merchants", "QiEnabled", "TINYINT(1) NOT NULL DEFAULT 1");
         await EnsureColumnAsync(db, "Merchants", "SuperQiEnabled", "TINYINT(1) NOT NULL DEFAULT 1");
         await EnsureColumnAsync(db, "Payments", "ProviderCheckoutUrl", "longtext NULL");
+        await EnsureMerchantPlatformsTableAsync(db);
+        await EnsureColumnAsync(db, "ApiKeys", "MerchantPlatformId", "char(36) NULL");
+        await EnsureColumnAsync(db, "Payments", "MerchantPlatformId", "char(36) NULL");
+    }
+
+    private static async Task EnsureMerchantPlatformsTableAsync(AppDbContext db)
+    {
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+            await conn.OpenAsync();
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT COUNT(*) FROM information_schema.TABLES
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'MerchantPlatforms'
+            """;
+        var exists = Convert.ToInt64(await cmd.ExecuteScalarAsync()) > 0;
+        if (exists) return;
+
+        // No DB-level FK: Merchants.Id charset/collation from EnsureCreated can differ across installs.
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE `MerchantPlatforms` (
+              `Id` char(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
+              `MerchantId` char(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
+              `Name` varchar(200) NOT NULL,
+              `Domain` varchar(255) NOT NULL,
+              `Status` int NOT NULL,
+              `AdminNotes` varchar(1000) NULL,
+              `ReviewedAtUtc` datetime(6) NULL,
+              `ReviewedByUserId` char(36) CHARACTER SET ascii COLLATE ascii_general_ci NULL,
+              `OneTimeApiKey` longtext NULL,
+              `CreatedAtUtc` datetime(6) NOT NULL,
+              `UpdatedAtUtc` datetime(6) NULL,
+              PRIMARY KEY (`Id`),
+              UNIQUE KEY `IX_MerchantPlatforms_MerchantId_Domain` (`MerchantId`, `Domain`),
+              KEY `IX_MerchantPlatforms_MerchantId` (`MerchantId`)
+            ) CHARACTER SET utf8mb4;
+            """);
     }
 
     private static async Task EnsureColumnAsync(AppDbContext db, string table, string column, string definition)

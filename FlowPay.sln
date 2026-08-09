@@ -1,0 +1,53 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "backend", "backend", "{1AE8ACA6-933B-BF2A-3671-3E2EAC007D16}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{0F9113EE-888A-26D2-68B0-4A7D0A2A8745}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fynexpay.Api", "backend\src\Fynexpay.Api\Fynexpay.Api.csproj", "{8764AC79-1054-BA32-1121-7B030370B8FA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fynexpay.Application", "backend\src\Fynexpay.Application\Fynexpay.Application.csproj", "{9B11C5FA-5FBC-78C3-4C1A-C54CDFFBBDDB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fynexpay.Domain", "backend\src\Fynexpay.Domain\Fynexpay.Domain.csproj", "{674771A0-A74A-58AB-931E-C01FD1422C32}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fynexpay.Infrastructure", "backend\src\Fynexpay.Infrastructure\Fynexpay.Infrastructure.csproj", "{7DFAEF0E-6A24-0704-2CFF-BC1E7887D0B1}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{8764AC79-1054-BA32-1121-7B030370B8FA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8764AC79-1054-BA32-1121-7B030370B8FA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8764AC79-1054-BA32-1121-7B030370B8FA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8764AC79-1054-BA32-1121-7B030370B8FA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9B11C5FA-5FBC-78C3-4C1A-C54CDFFBBDDB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9B11C5FA-5FBC-78C3-4C1A-C54CDFFBBDDB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9B11C5FA-5FBC-78C3-4C1A-C54CDFFBBDDB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9B11C5FA-5FBC-78C3-4C1A-C54CDFFBBDDB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{674771A0-A74A-58AB-931E-C01FD1422C32}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{674771A0-A74A-58AB-931E-C01FD1422C32}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{674771A0-A74A-58AB-931E-C01FD1422C32}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{674771A0-A74A-58AB-931E-C01FD1422C32}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7DFAEF0E-6A24-0704-2CFF-BC1E7887D0B1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7DFAEF0E-6A24-0704-2CFF-BC1E7887D0B1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7DFAEF0E-6A24-0704-2CFF-BC1E7887D0B1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7DFAEF0E-6A24-0704-2CFF-BC1E7887D0B1}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{0F9113EE-888A-26D2-68B0-4A7D0A2A8745} = {1AE8ACA6-933B-BF2A-3671-3E2EAC007D16}
+		{8764AC79-1054-BA32-1121-7B030370B8FA} = {0F9113EE-888A-26D2-68B0-4A7D0A2A8745}
+		{9B11C5FA-5FBC-78C3-4C1A-C54CDFFBBDDB} = {0F9113EE-888A-26D2-68B0-4A7D0A2A8745}
+		{674771A0-A74A-58AB-931E-C01FD1422C32} = {0F9113EE-888A-26D2-68B0-4A7D0A2A8745}
+		{7DFAEF0E-6A24-0704-2CFF-BC1E7887D0B1} = {0F9113EE-888A-26D2-68B0-4A7D0A2A8745}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {DD5FF196-0F4E-4032-83CD-A03D8D67F405}
+	EndGlobalSection
+EndGlobal

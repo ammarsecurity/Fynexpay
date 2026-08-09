@@ -16,14 +16,12 @@ public class AuthService
     private readonly IAppDbContext _db;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenService _jwt;
-    private readonly IApiKeyService _apiKeys;
 
-    public AuthService(IAppDbContext db, IPasswordHasher passwordHasher, IJwtTokenService jwt, IApiKeyService apiKeys)
+    public AuthService(IAppDbContext db, IPasswordHasher passwordHasher, IJwtTokenService jwt)
     {
         _db = db;
         _passwordHasher = passwordHasher;
         _jwt = jwt;
-        _apiKeys = apiKeys;
     }
 
     public async Task<AuthResponse> RegisterMerchantAsync(RegisterMerchantRequest request, CancellationToken ct = default)
@@ -54,25 +52,10 @@ public class AuthService
             Merchant = merchant
         };
 
-        var (plain, prefix, hash) = _apiKeys.Generate();
-        var apiKey = new ApiKey
-        {
-            Merchant = merchant,
-            Name = "Default",
-            KeyPrefix = prefix,
-            KeyHash = hash
-        };
-
         _db.Merchants.Add(merchant);
         _db.Wallets.Add(wallet);
         _db.Users.Add(user);
-        _db.ApiKeys.Add(apiKey);
         await _db.SaveChangesAsync(ct);
-
-        // Store plain key once in memory return path via notes? Better return separately.
-        // For register response we only return JWT; API key created but merchant regenerates in dashboard.
-        // Actually include first key in a temporary way - we'll return CreateApiKey in register enhanced response.
-        _ = plain; // generated for seed; merchant creates visible key from dashboard after activation
 
         var token = _jwt.CreateToken(user.Id, user.Email, user.Role.ToString(), merchant.Id, user.FullName);
         return new AuthResponse(token, user.Id, user.Email, user.FullName, user.Role.ToString(), merchant.Id, merchant.Status.ToString());
@@ -96,6 +79,7 @@ public class PaymentService
 {
     private readonly IAppDbContext _db;
     private readonly IPaymentProviderResolver _resolver;
+    private readonly IProviderSettingsService _providerSettings;
     private readonly IMerchantWebhookSender _webhookSender;
     private readonly ILogger<PaymentService> _logger;
     private readonly string _publicBaseUrl;
@@ -103,24 +87,40 @@ public class PaymentService
     public PaymentService(
         IAppDbContext db,
         IPaymentProviderResolver resolver,
+        IProviderSettingsService providerSettings,
         IMerchantWebhookSender webhookSender,
         ILogger<PaymentService> logger,
         Microsoft.Extensions.Options.IOptions<AppOptions> options)
     {
         _db = db;
         _resolver = resolver;
+        _providerSettings = providerSettings;
         _webhookSender = webhookSender;
         _logger = logger;
         _publicBaseUrl = options.Value.PublicBaseUrl.TrimEnd('/');
     }
 
-    public async Task<PaymentDto> CreateAsync(Guid merchantId, CreatePaymentRequest request, string? idempotencyKey, CancellationToken ct = default)
+    public async Task<PaymentDto> CreateAsync(
+        Guid merchantId,
+        CreatePaymentRequest request,
+        string? idempotencyKey,
+        CancellationToken ct = default,
+        Guid? merchantPlatformId = null)
     {
         var merchant = await _db.Merchants.FirstOrDefaultAsync(m => m.Id == merchantId, ct)
             ?? throw new InvalidOperationException("التاجر غير موجود");
 
         if (merchant.Status != MerchantStatus.Active)
             throw new InvalidOperationException("حساب التاجر غير مفعّل");
+
+        if (merchantPlatformId.HasValue)
+        {
+            var platform = await _db.MerchantPlatforms.FirstOrDefaultAsync(
+                p => p.Id == merchantPlatformId.Value && p.MerchantId == merchantId, ct)
+                ?? throw new InvalidOperationException("المنصة غير موجودة");
+            if (platform.Status != PlatformStatus.Approved)
+                throw new InvalidOperationException("المنصة غير معتمدة");
+        }
 
         if (request.Amount < 250)
             throw new ArgumentException("الحد الأدنى للمبلغ 250 دينار");
@@ -154,6 +154,7 @@ public class PaymentService
         var payment = new Payment
         {
             MerchantId = merchantId,
+            MerchantPlatformId = merchantPlatformId,
             MerchantOrderId = orderId,
             Amount = request.Amount,
             Currency = currency,
@@ -283,13 +284,44 @@ public class PaymentService
             ?? throw new InvalidOperationException("التاجر غير موجود");
         var platform = await _resolver.GetEnabledProvidersAsync(ct);
         var effective = await GetEffectiveProvidersAsync(merchant, ct);
+        var catalog = await BuildProviderCatalogAsync(ct);
         return new MerchantPaymentMethodsDto(
             merchant.FibEnabled,
             merchant.ZainCashEnabled,
             merchant.QiEnabled,
             merchant.SuperQiEnabled,
             platform.Select(p => p.ToString()).ToList(),
-            effective.Select(p => p.ToString()).ToList());
+            effective.Select(p => p.ToString()).ToList(),
+            catalog);
+    }
+
+    public async Task<IReadOnlyList<ProviderCatalogItemDto>> BuildProviderCatalogAsync(CancellationToken ct = default)
+    {
+        var s = await _providerSettings.GetAsync(ct);
+        return new[]
+        {
+            Item(PaymentProviderType.Fib, "FIB", s.Fib),
+            Item(PaymentProviderType.ZainCash, "ZainCash", s.ZainCash),
+            Item(PaymentProviderType.Qi, "QI Card", s.Qi),
+            Item(PaymentProviderType.SuperQi, "SuperQi", s.SuperQi)
+        };
+
+        static ProviderCatalogItemDto Item(PaymentProviderType type, string name, ProviderBundleSettings b)
+        {
+            var logo = string.IsNullOrWhiteSpace(b.LogoUrl)
+                ? DefaultLogo(type)
+                : b.LogoUrl;
+            return new(type.ToString(), name, logo, b.Enabled, b.Priority);
+        }
+
+        static string DefaultLogo(PaymentProviderType type) => type switch
+        {
+            PaymentProviderType.Fib => "/providers/fib.svg",
+            PaymentProviderType.ZainCash => "/providers/zaincash.svg",
+            PaymentProviderType.Qi => "/providers/qi.svg",
+            PaymentProviderType.SuperQi => "/providers/superqi.svg",
+            _ => ""
+        };
     }
 
     public async Task<MerchantPaymentMethodsDto> UpdatePaymentMethodsAsync(
@@ -437,13 +469,14 @@ public class PaymentService
         wallet.LifetimeFees += payment.PlatformFee;
         wallet.UpdatedAtUtc = DateTime.UtcNow;
 
+        var paymentRef = payment.Id.ToString("N")[..8].ToUpperInvariant();
         _db.WalletLedgerEntries.Add(new WalletLedgerEntry
         {
             WalletId = wallet.Id,
             Type = LedgerEntryType.PaymentCredit,
             Amount = payment.NetAmount,
             BalanceAfter = wallet.AvailableBalance,
-            Description = $"صافي دفعة {payment.Id}",
+            Description = $"صافي دفعة #{paymentRef}",
             PaymentId = payment.Id
         });
 
@@ -453,29 +486,69 @@ public class PaymentService
             Type = LedgerEntryType.PlatformFee,
             Amount = -payment.PlatformFee,
             BalanceAfter = wallet.AvailableBalance,
-            Description = $"عمولة المنصة على دفعة {payment.Id}",
+            Description = $"عمولة المنصة #{paymentRef}",
             PaymentId = payment.Id
         });
     }
 
-    public static PaymentDto Map(Payment p, IReadOnlyList<string>? availableProviders = null) => new(
-        p.Id,
-        p.MerchantOrderId,
-        p.Amount,
-        p.Currency,
-        p.Status.ToString(),
-        p.Provider == PaymentProviderType.Auto ? "PendingSelection" : p.Provider.ToString(),
-        p.Description,
-        string.IsNullOrWhiteSpace(p.CheckoutUrl) ? null : p.CheckoutUrl,
-        p.ProviderCheckoutUrl,
-        p.QrCode,
-        p.ReadableCode,
-        p.PlatformFee,
-        p.NetAmount,
-        p.CreatedAtUtc,
-        p.PaidAtUtc,
-        p.FailureReason,
-        availableProviders);
+    public PaymentDto Map(Payment p, IReadOnlyList<string>? availableProviders = null, bool includeEvents = false)
+    {
+        var checkout = string.IsNullOrWhiteSpace(p.CheckoutUrl) ? null : p.CheckoutUrl;
+        var returnUrl = $"{_publicBaseUrl}/checkout/{p.Id:D}/return";
+        IReadOnlyList<PaymentEventDto>? events = null;
+        if (includeEvents && p.Events != null)
+        {
+            events = p.Events
+                .OrderByDescending(e => e.CreatedAtUtc)
+                .Select(e => new PaymentEventDto(e.Id, e.Source, e.EventType, e.Payload, e.CreatedAtUtc))
+                .ToList();
+        }
+
+        return new PaymentDto(
+            p.Id,
+            p.MerchantId,
+            p.MerchantPlatformId,
+            p.Merchant?.BusinessName,
+            p.MerchantOrderId,
+            p.Amount,
+            p.Currency,
+            p.Status.ToString(),
+            p.Provider == PaymentProviderType.Auto ? "PendingSelection" : p.Provider.ToString(),
+            p.Description,
+            checkout,
+            p.ProviderCheckoutUrl,
+            returnUrl,
+            p.QrCode,
+            p.ReadableCode,
+            p.SuccessUrl,
+            p.FailureUrl,
+            p.CallbackUrl,
+            p.ProviderPaymentId,
+            p.IdempotencyKey,
+            p.PlatformFee,
+            p.NetAmount,
+            p.LedgerApplied,
+            p.CreatedAtUtc,
+            p.UpdatedAtUtc,
+            p.PaidAtUtc,
+            p.ExpiredAtUtc,
+            p.FailureReason,
+            p.ProviderRawResponse,
+            availableProviders,
+            events);
+    }
+
+    public async Task<PaymentDto?> GetDetailAsync(Guid paymentId, Guid? merchantId = null, CancellationToken ct = default)
+    {
+        var q = _db.Payments.Include(p => p.Merchant).Include(p => p.Events).AsQueryable();
+        q = q.Where(p => p.Id == paymentId);
+        if (merchantId.HasValue)
+            q = q.Where(p => p.MerchantId == merchantId.Value);
+
+        var payment = await q.FirstOrDefaultAsync(ct);
+        if (payment == null) return null;
+        return Map(payment, includeEvents: true);
+    }
 
     private async Task<PaymentDto> MapAsync(Payment payment, CancellationToken ct)
     {
@@ -651,11 +724,13 @@ public class MerchantAdminService
 {
     private readonly IAppDbContext _db;
     private readonly IApiKeyService _apiKeys;
+    private readonly IPasswordHasher _passwordHasher;
 
-    public MerchantAdminService(IAppDbContext db, IApiKeyService apiKeys)
+    public MerchantAdminService(IAppDbContext db, IApiKeyService apiKeys, IPasswordHasher passwordHasher)
     {
         _db = db;
         _apiKeys = apiKeys;
+        _passwordHasher = passwordHasher;
     }
 
     public async Task<IReadOnlyList<MerchantDto>> ListAsync(CancellationToken ct = default)
@@ -670,9 +745,39 @@ public class MerchantAdminService
             .ToListAsync(ct);
     }
 
+    public async Task<MerchantDetailDto> GetDetailAsync(Guid merchantId, CancellationToken ct = default)
+    {
+        var m = await _db.Merchants
+            .Include(x => x.Wallet)
+            .Include(x => x.Users)
+            .FirstOrDefaultAsync(x => x.Id == merchantId, ct)
+            ?? throw new InvalidOperationException("التاجر غير موجود");
+
+        var paymentsCount = await _db.Payments.CountAsync(p => p.MerchantId == merchantId, ct);
+        var apiKeysCount = await _db.ApiKeys.CountAsync(k => k.MerchantId == merchantId, ct);
+        var owners = m.Users
+            .OrderBy(u => u.CreatedAtUtc)
+            .Select(u => new MerchantOwnerDto(u.Id, u.Email, u.FullName, u.Phone, u.IsActive, u.CreatedAtUtc))
+            .ToList();
+
+        return new MerchantDetailDto(
+            m.Id, m.BusinessName, m.BusinessNameAr, m.ContactEmail, m.ContactPhone,
+            m.Status.ToString(), m.CommissionPercent, m.WebsiteUrl, m.Notes, m.WebhookSecret,
+            m.FibEnabled, m.ZainCashEnabled, m.QiEnabled, m.SuperQiEnabled,
+            m.CreatedAtUtc, m.UpdatedAtUtc,
+            m.Wallet?.AvailableBalance ?? 0,
+            m.Wallet?.PendingBalance ?? 0,
+            m.Wallet?.LifetimeGross ?? 0,
+            m.Wallet?.LifetimeFees ?? 0,
+            paymentsCount, apiKeysCount, owners);
+    }
+
     public async Task<MerchantDto> UpdateAsync(Guid merchantId, UpdateMerchantAdminRequest request, CancellationToken ct = default)
     {
-        var merchant = await _db.Merchants.Include(m => m.Wallet).FirstOrDefaultAsync(m => m.Id == merchantId, ct)
+        var merchant = await _db.Merchants
+            .Include(m => m.Wallet)
+            .Include(m => m.Users)
+            .FirstOrDefaultAsync(m => m.Id == merchantId, ct)
             ?? throw new InvalidOperationException("التاجر غير موجود");
 
         if (!string.IsNullOrWhiteSpace(request.Status) && Enum.TryParse<MerchantStatus>(request.Status, true, out var status))
@@ -687,6 +792,63 @@ public class MerchantAdminService
 
         if (request.Notes != null)
             merchant.Notes = request.Notes;
+        if (request.BusinessName != null)
+        {
+            if (string.IsNullOrWhiteSpace(request.BusinessName))
+                throw new ArgumentException("اسم النشاط مطلوب");
+            merchant.BusinessName = request.BusinessName.Trim();
+        }
+        if (request.BusinessNameAr != null)
+            merchant.BusinessNameAr = string.IsNullOrWhiteSpace(request.BusinessNameAr) ? null : request.BusinessNameAr.Trim();
+        if (request.ContactEmail != null)
+        {
+            if (string.IsNullOrWhiteSpace(request.ContactEmail))
+                throw new ArgumentException("البريد مطلوب");
+            merchant.ContactEmail = request.ContactEmail.Trim().ToLowerInvariant();
+        }
+        if (request.ContactPhone != null)
+            merchant.ContactPhone = string.IsNullOrWhiteSpace(request.ContactPhone) ? null : request.ContactPhone.Trim();
+        if (request.WebsiteUrl != null)
+            merchant.WebsiteUrl = string.IsNullOrWhiteSpace(request.WebsiteUrl) ? null : request.WebsiteUrl.Trim();
+        if (request.FibEnabled.HasValue) merchant.FibEnabled = request.FibEnabled.Value;
+        if (request.ZainCashEnabled.HasValue) merchant.ZainCashEnabled = request.ZainCashEnabled.Value;
+        if (request.QiEnabled.HasValue) merchant.QiEnabled = request.QiEnabled.Value;
+        if (request.SuperQiEnabled.HasValue) merchant.SuperQiEnabled = request.SuperQiEnabled.Value;
+
+        var owner = merchant.Users.OrderBy(u => u.CreatedAtUtc).FirstOrDefault();
+        if (owner != null)
+        {
+            if (request.OwnerFullName != null)
+            {
+                if (string.IsNullOrWhiteSpace(request.OwnerFullName))
+                    throw new ArgumentException("اسم المسؤول مطلوب");
+                owner.FullName = request.OwnerFullName.Trim();
+            }
+            if (request.OwnerPhone != null)
+                owner.Phone = string.IsNullOrWhiteSpace(request.OwnerPhone) ? null : request.OwnerPhone.Trim();
+            if (request.OwnerEmail != null)
+            {
+                var email = request.OwnerEmail.Trim().ToLowerInvariant();
+                if (string.IsNullOrWhiteSpace(email))
+                    throw new ArgumentException("بريد المسؤول مطلوب");
+                if (await _db.Users.AnyAsync(u => u.Email == email && u.Id != owner.Id, ct))
+                    throw new InvalidOperationException("البريد مستخدم لحساب آخر");
+                owner.Email = email;
+                merchant.ContactEmail = email;
+            }
+            if (!string.IsNullOrWhiteSpace(request.NewPassword))
+            {
+                if (request.NewPassword.Length < 8)
+                    throw new ArgumentException("كلمة المرور يجب أن تكون 8 أحرف على الأقل");
+                owner.PasswordHash = _passwordHasher.Hash(request.NewPassword);
+                owner.UpdatedAtUtc = DateTime.UtcNow;
+            }
+            owner.UpdatedAtUtc = DateTime.UtcNow;
+        }
+        else if (!string.IsNullOrWhiteSpace(request.NewPassword))
+        {
+            throw new InvalidOperationException("لا يوجد مستخدم مسؤول لتعيين كلمة المرور");
+        }
 
         merchant.UpdatedAtUtc = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
@@ -697,26 +859,69 @@ public class MerchantAdminService
             merchant.Wallet?.AvailableBalance ?? 0);
     }
 
-    public async Task<CreateApiKeyResponse> CreateApiKeyAsync(Guid merchantId, string name, CancellationToken ct = default)
+    public async Task DeleteAsync(Guid merchantId, CancellationToken ct = default)
     {
-        var (plain, prefix, hash) = _apiKeys.Generate();
-        var entity = new ApiKey
+        var merchant = await _db.Merchants
+            .Include(m => m.Wallet)
+            .Include(m => m.Users)
+            .FirstOrDefaultAsync(m => m.Id == merchantId, ct)
+            ?? throw new InvalidOperationException("التاجر غير موجود");
+
+        var paymentIds = await _db.Payments.Where(p => p.MerchantId == merchantId).Select(p => p.Id).ToListAsync(ct);
+        if (paymentIds.Count > 0)
         {
-            MerchantId = merchantId,
-            Name = string.IsNullOrWhiteSpace(name) ? "Key" : name,
-            KeyPrefix = prefix,
-            KeyHash = hash
-        };
-        _db.ApiKeys.Add(entity);
+            var events = await _db.PaymentEvents.Where(e => paymentIds.Contains(e.PaymentId)).ToListAsync(ct);
+            _db.PaymentEvents.RemoveRange(events);
+            var payments = await _db.Payments.Where(p => p.MerchantId == merchantId).ToListAsync(ct);
+            _db.Payments.RemoveRange(payments);
+        }
+
+        var payouts = await _db.PayoutRequests.Where(p => p.MerchantId == merchantId).ToListAsync(ct);
+        _db.PayoutRequests.RemoveRange(payouts);
+
+        var keys = await _db.ApiKeys.Where(k => k.MerchantId == merchantId).ToListAsync(ct);
+        _db.ApiKeys.RemoveRange(keys);
+
+        var platforms = await _db.MerchantPlatforms.Where(p => p.MerchantId == merchantId).ToListAsync(ct);
+        _db.MerchantPlatforms.RemoveRange(platforms);
+
+        if (merchant.Wallet != null)
+        {
+            var ledger = await _db.WalletLedgerEntries.Where(l => l.WalletId == merchant.Wallet.Id).ToListAsync(ct);
+            _db.WalletLedgerEntries.RemoveRange(ledger);
+            _db.Wallets.Remove(merchant.Wallet);
+        }
+
+        if (merchant.Users.Count > 0)
+        {
+            var userIds = merchant.Users.Select(u => u.Id).ToList();
+            var reviewed = await _db.PayoutRequests
+                .Where(p => p.ReviewedByUserId != null && userIds.Contains(p.ReviewedByUserId.Value))
+                .ToListAsync(ct);
+            foreach (var p in reviewed)
+                p.ReviewedByUserId = null;
+
+            _db.Users.RemoveRange(merchant.Users);
+        }
+
+        _db.Merchants.Remove(merchant);
         await _db.SaveChangesAsync(ct);
-        return new CreateApiKeyResponse(entity.Id, entity.Name, entity.KeyPrefix, plain, entity.CreatedAtUtc);
     }
+
+    public Task<CreateApiKeyResponse> CreateApiKeyAsync(Guid merchantId, string name, CancellationToken ct = default)
+        => throw new InvalidOperationException("إنشاء المفاتيح الحرّة متوقف. أضف منصة معتمدة لإصدار مفتاح API مربوط بالدومين.");
 
     public async Task<IReadOnlyList<ApiKeyDto>> ListApiKeysAsync(Guid merchantId, CancellationToken ct = default)
     {
-        return await _db.ApiKeys.Where(k => k.MerchantId == merchantId)
+        return await _db.ApiKeys
+            .Include(k => k.MerchantPlatform)
+            .Where(k => k.MerchantId == merchantId)
             .OrderByDescending(k => k.CreatedAtUtc)
-            .Select(k => new ApiKeyDto(k.Id, k.Name, k.KeyPrefix, k.IsActive, k.CreatedAtUtc, k.LastUsedAtUtc))
+            .Select(k => new ApiKeyDto(
+                k.Id, k.Name, k.KeyPrefix, k.IsActive, k.CreatedAtUtc, k.LastUsedAtUtc,
+                k.MerchantPlatformId,
+                k.MerchantPlatform != null ? k.MerchantPlatform.Name : null,
+                k.MerchantPlatform != null ? k.MerchantPlatform.Domain : null))
             .ToListAsync(ct);
     }
 

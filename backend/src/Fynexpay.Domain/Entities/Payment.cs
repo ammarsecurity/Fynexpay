@@ -6,6 +6,8 @@ public class Payment : BaseEntity
 {
     public Guid MerchantId { get; set; }
     public Merchant Merchant { get; set; } = null!;
+    public Guid? MerchantPlatformId { get; set; }
+    public MerchantPlatform? MerchantPlatform { get; set; }
     public string MerchantOrderId { get; set; } = string.Empty;
     public decimal Amount { get; set; }
     public string Currency { get; set; } = "IQD";

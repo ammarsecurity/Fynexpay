@@ -23,6 +23,7 @@ public class Merchant : BaseEntity
     public Wallet? Wallet { get; set; }
     public ICollection<User> Users { get; set; } = new List<User>();
     public ICollection<ApiKey> ApiKeys { get; set; } = new List<ApiKey>();
+    public ICollection<MerchantPlatform> Platforms { get; set; } = new List<MerchantPlatform>();
     public ICollection<Payment> Payments { get; set; } = new List<Payment>();
     public ICollection<PayoutRequest> Payouts { get; set; } = new List<PayoutRequest>();
 }

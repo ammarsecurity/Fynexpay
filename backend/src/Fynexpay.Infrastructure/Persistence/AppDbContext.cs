@@ -10,6 +10,7 @@ public class AppDbContext : DbContext, IAppDbContext
 
     public DbSet<User> Users => Set<User>();
     public DbSet<Merchant> Merchants => Set<Merchant>();
+    public DbSet<MerchantPlatform> MerchantPlatforms => Set<MerchantPlatform>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     public DbSet<Wallet> Wallets => Set<Wallet>();
     public DbSet<WalletLedgerEntry> WalletLedgerEntries => Set<WalletLedgerEntry>();
@@ -36,11 +37,24 @@ public class AppDbContext : DbContext, IAppDbContext
             e.HasOne(x => x.Wallet).WithOne(w => w.Merchant).HasForeignKey<Wallet>(w => w.MerchantId);
         });
 
+        modelBuilder.Entity<MerchantPlatform>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.Domain).HasMaxLength(255);
+            e.Property(x => x.AdminNotes).HasMaxLength(1000);
+            e.Property(x => x.OneTimeApiKey).HasColumnType("longtext");
+            e.HasIndex(x => new { x.MerchantId, x.Domain }).IsUnique();
+            e.HasOne(x => x.Merchant).WithMany(m => m.Platforms).HasForeignKey(x => x.MerchantId).OnDelete(DeleteBehavior.Cascade);
+        });
+
         modelBuilder.Entity<ApiKey>(e =>
         {
             e.HasIndex(x => x.KeyPrefix);
             e.Property(x => x.KeyPrefix).HasMaxLength(16);
             e.Property(x => x.KeyHash).HasMaxLength(128);
+            e.HasOne(x => x.MerchantPlatform).WithOne(p => p.ApiKey)
+                .HasForeignKey<ApiKey>(x => x.MerchantPlatformId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<Wallet>(e =>
@@ -68,8 +82,12 @@ public class AppDbContext : DbContext, IAppDbContext
             e.Property(x => x.IdempotencyKey).HasMaxLength(100);
             e.HasIndex(x => new { x.MerchantId, x.IdempotencyKey });
             e.HasIndex(x => x.ProviderPaymentId);
+            e.HasIndex(x => x.MerchantPlatformId);
             e.Property(x => x.QrCode).HasColumnType("longtext");
             e.Property(x => x.ProviderRawResponse).HasColumnType("longtext");
+            e.HasOne(x => x.MerchantPlatform).WithMany(p => p.Payments)
+                .HasForeignKey(x => x.MerchantPlatformId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<PaymentEvent>(e =>

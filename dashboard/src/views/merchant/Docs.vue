@@ -1,128 +1,161 @@
 <template>
   <div class="docs">
-    <div class="docs-hero">
-      <h1>دليل ربط الدفع</h1>
-      <p class="muted">اتبع الخطوات التالية لربط موقعك أو تطبيقك مع Fynexpay خلال دقائق.</p>
+    <div class="page-head">
+      <div>
+        <h1>{{ $t('docs.title') }}</h1>
+        <p class="sub">{{ $t('docs.subtitle') }}</p>
+      </div>
+      <div class="row">
+        <RouterLink class="btn secondary" to="/merchant/platforms">{{ $t('docs.ctaPlatforms') }}</RouterLink>
+        <RouterLink class="btn" to="/merchant/test">{{ $t('docs.ctaTest') }}</RouterLink>
+      </div>
     </div>
 
-    <div class="steps">
-      <div class="step" v-for="(s, i) in steps" :key="i">
-        <div class="num">{{ i + 1 }}</div>
-        <div>
-          <h3>{{ s.title }}</h3>
-          <p class="muted">{{ s.text }}</p>
-          <RouterLink v-if="s.link" class="btn secondary" :to="s.link">{{ s.linkText }}</RouterLink>
+    <section class="card platform-banner">
+      <div class="banner-copy">
+        <span class="eyebrow">{{ $t('docs.platformBadge') }}</span>
+        <h2>{{ $t('docs.platformTitle') }}</h2>
+        <p>{{ $t('docs.platformBody') }}</p>
+        <ul class="rules">
+          <li>{{ $t('docs.ruleKey') }}</li>
+          <li>{{ $t('docs.ruleCors') }}</li>
+          <li>{{ $t('docs.ruleServer') }}</li>
+        </ul>
+      </div>
+      <div class="banner-side">
+        <div v-if="approvedPlatforms.length" class="platform-list">
+          <div v-for="p in approvedPlatforms" :key="p.id" class="platform-pill">
+            <strong>{{ p.name }}</strong>
+            <span class="mono" dir="ltr">{{ p.domain }}</span>
+            <span class="badge ok">{{ $t('status.Approved') }}</span>
+          </div>
+        </div>
+        <div v-else class="empty-platform">
+          <p>{{ $t('docs.noPlatform') }}</p>
+          <RouterLink class="btn" to="/merchant/platforms">{{ $t('docs.addPlatform') }}</RouterLink>
         </div>
       </div>
-    </div>
+    </section>
 
-    <div class="card">
-      <h2>كيف تتم العملية؟</h2>
+    <section class="steps">
+      <article v-for="(s, i) in steps" :key="i" class="step card">
+        <div class="num">{{ i + 1 }}</div>
+        <div class="step-body">
+          <h3>{{ s.title }}</h3>
+          <p>{{ s.text }}</p>
+          <RouterLink v-if="s.link" class="btn secondary sm" :to="s.link">{{ s.linkText }}</RouterLink>
+        </div>
+      </article>
+    </section>
+
+    <section class="card">
+      <h2>{{ $t('docs.flowTitle') }}</h2>
       <div class="flow">
-        <div class="flow-item">تطبيقك يطلب إنشاء دفعة (مبلغ + نوع خدمة)</div>
-        <div class="arrow">←</div>
-        <div class="flow-item">Fynexpay يرجع صفحة دفع مستضافة</div>
-        <div class="arrow">←</div>
-        <div class="flow-item">الزبون يختار المزود ويدفع</div>
-        <div class="arrow">←</div>
-        <div class="flow-item">نشعرك بالنتيجة + نضيف الصافي لمحفظتك</div>
+        <div class="flow-item" v-for="(f, i) in flow" :key="i">
+          <span class="flow-n">{{ i + 1 }}</span>
+          <span>{{ f }}</span>
+        </div>
       </div>
-    </div>
+    </section>
 
-    <div class="card">
-      <div class="row between">
-        <h2>1) أنشئ دفعة</h2>
-        <button class="btn secondary" @click="copy(createExample, 'تم نسخ مثال إنشاء الدفعة')">نسخ المثال</button>
+    <section class="card">
+      <div class="section-head">
+        <div>
+          <h2>{{ $t('docs.createTitle') }}</h2>
+          <p class="muted">{{ $t('docs.createHint') }}</p>
+        </div>
+        <button class="btn secondary" type="button" @click="copy(createExample, $t('docs.copied'))">{{ $t('docs.copy') }}</button>
       </div>
-      <p class="muted">أرسل طلباً من سيرفرك (لا تضع المفتاح داخل التطبيق للموبايل مباشرة).</p>
       <pre class="code mono" dir="ltr">{{ createExample }}</pre>
 
-      <h3>الحقول المهمة</h3>
-      <table>
-        <thead>
-          <tr><th>الحقل</th><th>مطلوب؟</th><th>الشرح</th></tr>
-        </thead>
-        <tbody>
-          <tr><td class="mono">amount</td><td>نعم</td><td>المبلغ بالدينار العراقي (الحد الأدنى 250)</td></tr>
-          <tr><td class="mono">serviceType</td><td>نعم</td><td>نوع الخدمة أو الوصف الذي يظهر للزبون (أو <code>description</code>)</td></tr>
-          <tr><td class="mono">orderId</td><td>لا</td><td>رقم الطلب عندك — يُولَّد تلقائياً إن لم تُرسله</td></tr>
-          <tr><td class="mono">callbackUrl</td><td>اختياري</td><td>رابط على سيرفرك نستدعيه عند تغيّر الحالة</td></tr>
-          <tr><td class="mono">successUrl</td><td>اختياري</td><td>صفحة العودة بعد نجاح الدفع</td></tr>
-          <tr><td class="mono">failureUrl</td><td>اختياري</td><td>صفحة العودة عند الفشل</td></tr>
-        </tbody>
-      </table>
+      <h3>{{ $t('docs.fieldsTitle') }}</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>{{ $t('docs.field') }}</th>
+              <th>{{ $t('docs.required') }}</th>
+              <th>{{ $t('docs.desc') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in fields" :key="row.field">
+              <td class="mono">{{ row.field }}</td>
+              <td>{{ row.required }}</td>
+              <td>{{ row.desc }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
-      <h3>ماذا يرجع الرد؟</h3>
+      <h3>{{ $t('docs.responseTitle') }}</h3>
       <pre class="code mono" dir="ltr">{{ createResponse }}</pre>
-      <p class="muted">وجّه الزبون إلى <code>checkoutUrl</code> — صفحة Fynexpay حيث يختار طريقة الدفع.</p>
+      <p class="muted">{{ $t('docs.checkoutHint') }}</p>
+    </section>
+
+    <div class="dash-grid">
+      <section class="card">
+        <div class="section-head">
+          <div>
+            <h2>{{ $t('docs.statusTitle') }}</h2>
+            <p class="muted">{{ $t('docs.statusHint') }}</p>
+          </div>
+          <button class="btn secondary" type="button" @click="copy(statusExample, $t('docs.copied'))">{{ $t('docs.copy') }}</button>
+        </div>
+        <pre class="code mono" dir="ltr">{{ statusExample }}</pre>
+        <div class="chips">
+          <span class="badge warn">Pending</span>
+          <span class="badge ok">Paid</span>
+          <span class="badge danger">Failed</span>
+          <span class="badge">Cancelled</span>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-head">
+          <div>
+            <h2>{{ $t('docs.webhookTitle') }}</h2>
+            <p class="muted">{{ $t('docs.webhookHint') }}</p>
+          </div>
+          <button class="btn secondary" type="button" :disabled="!secret" @click="copy(secret, $t('docs.copied'))">{{ $t('docs.copySecret') }}</button>
+        </div>
+        <ul class="bullets">
+          <li><code>X-Fynexpay-Signature</code></li>
+          <li>HMAC-SHA256</li>
+          <li>{{ $t('docs.webhookPaidOnly') }}</li>
+        </ul>
+        <div v-if="secret" class="copy-box">
+          <code class="mono" dir="ltr">{{ secret }}</code>
+        </div>
+        <pre class="code mono" dir="ltr">{{ webhookExample }}</pre>
+      </section>
     </div>
 
-    <div class="card">
-      <div class="row between">
-        <h2>2) تحقق من حالة الدفعة</h2>
-        <button class="btn secondary" @click="copy(statusExample, 'تم نسخ مثال الاستعلام')">نسخ المثال</button>
-      </div>
-      <p class="muted">حتى مع الـ webhook، يفضّل دائماً التأكد من السيرفر قبل تسليم الطلب.</p>
-      <pre class="code mono" dir="ltr">{{ statusExample }}</pre>
-      <p>الحالات: <span class="badge">Pending</span> <span class="badge ok">Paid</span> <span class="badge danger">Failed</span> <span class="badge warn">Cancelled</span></p>
-    </div>
-
-    <div class="card">
-      <div class="row between">
-        <h2>3) استقبل إشعار Webhook</h2>
-        <button class="btn secondary" @click="copy(secret || '', secret ? 'تم نسخ Webhook Secret' : 'لا يوجد سر')">نسخ السر</button>
-      </div>
-      <p class="muted">عند تغيّر الحالة نرسل POST إلى <code>callbackUrl</code> مع توقيع HMAC.</p>
-      <ul class="bullets">
-        <li>الترويسة: <code>X-Fynexpay-Signature</code></li>
-        <li>الخوارزمية: HMAC-SHA256 على جسم الطلب (raw body) باستخدام Webhook Secret</li>
-        <li>قارن التوقيع ثم حدّث طلبك فقط إذا الحالة <code>Paid</code></li>
-      </ul>
-      <div class="copy-box" v-if="secret">
-        <code class="mono">{{ secret }}</code>
-        <RouterLink class="btn secondary" to="/merchant/keys">إدارة المفاتيح</RouterLink>
-      </div>
-      <pre class="code mono" dir="ltr">{{ webhookExample }}</pre>
-    </div>
-
-    <div class="card">
-      <h2>اختيار مزود الدفع</h2>
-      <p class="muted">التاجر لا يختار المزود عند الإنشاء. الزبون يختار من صفحة الدفع حسب ما فعّلته في <RouterLink to="/merchant/payment-methods">طرق الدفع</RouterLink> (متقاطع مع مزودي المنصة).</p>
+    <section class="card">
+      <h2>{{ $t('docs.providersTitle') }}</h2>
+      <p class="muted">{{ $t('docs.providersHint') }} <RouterLink to="/merchant/payment-methods">{{ $t('nav.paymentMethods') }}</RouterLink></p>
       <div class="providers">
-        <div class="provider">
-          <h3>FIB</h3>
-          <p class="muted">دفع عبر تطبيق FIB.</p>
-        </div>
-        <div class="provider">
-          <h3>ZainCash</h3>
-          <p class="muted">محفظة زين كاش.</p>
-        </div>
-        <div class="provider">
-          <h3>QI</h3>
-          <p class="muted">بطاقات QI والبطاقات البنكية.</p>
-        </div>
-        <div class="provider">
-          <h3>SuperQi</h3>
-          <p class="muted">محفظة SuperQi عبر QI Gate (ALIPAY).</p>
+        <div class="provider" v-for="p in providers" :key="p.name">
+          <strong>{{ p.name }}</strong>
+          <span>{{ p.desc }}</span>
         </div>
       </div>
-    </div>
+    </section>
 
-    <div class="card tip">
-      <h2>نصائح سريعة</h2>
+    <section class="card tip">
+      <h2>{{ $t('docs.tipsTitle') }}</h2>
       <ul class="bullets">
-        <li>استخدم المفتاح من السيرفر فقط، ولا تعرضه في الفرونتاند.</li>
-        <li>أرسل <code>X-Idempotency-Key</code> عند إنشاء الدفعة لتجنب التكرار عند إعادة المحاولة.</li>
-        <li>بعد <code>Paid</code> يُضاف صافي المبلغ لمحفظتك ناقص عمولة المنصة.</li>
-        <li>للتجربة بدون مزود حقيقي: المنصة تدعم Mock عبر الأدمن عند غياب credentials.</li>
+        <li>{{ $t('docs.tip1') }}</li>
+        <li>{{ $t('docs.tip2') }}</li>
+        <li>{{ $t('docs.tip3') }}</li>
+        <li>{{ $t('docs.tip4') }}</li>
       </ul>
-      <div class="row" style="margin-top:14px;gap:10px;flex-wrap:wrap">
-        <a class="btn" :href="swaggerUrl" target="_blank" rel="noopener">فتح Swagger</a>
-        <RouterLink class="btn accent" to="/merchant/test">تجربة الدفع الآن</RouterLink>
-        <RouterLink class="btn secondary" to="/merchant/keys">إنشاء مفتاح API</RouterLink>
-        <RouterLink class="btn secondary" to="/merchant/payments">عرض المدفوعات</RouterLink>
+      <div class="row actions">
+        <a class="btn" :href="swaggerUrl" target="_blank" rel="noopener">Swagger</a>
+        <RouterLink class="btn secondary" to="/merchant/platforms">{{ $t('docs.ctaPlatforms') }}</RouterLink>
+        <RouterLink class="btn secondary" to="/merchant/payments">{{ $t('nav.payments') }}</RouterLink>
       </div>
-    </div>
+    </section>
 
     <div v-if="toast" class="toast">{{ toast }}</div>
   </div>
@@ -130,46 +163,79 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api, API_BASE } from '../../api'
 
+const { t } = useI18n()
 const secret = ref('')
+const platforms = ref([])
 const toast = ref('')
 let timer = null
 
 const swaggerUrl = `${API_BASE}/swagger`
-const steps = [
-  { title: 'فعّل حسابك', text: 'بعد التسجيل ينتظر حسابك موافقة الإدارة. عند التفعيل يظهر رصيدك ويمكنك استخدام API.', link: '/merchant', linkText: 'نظرة عامة' },
-  { title: 'أنشئ مفتاح API', text: 'من صفحة المفاتيح انسخ المفتاح فوراً واحفظه في السيرفر.', link: '/merchant/keys', linkText: 'المفاتيح' },
-  { title: 'أنشئ دفعة من سيرفرك', text: 'استدعِ POST /v1/payments بالمبلغ ونوع الخدمة ثم وجّه الزبون لـ checkoutUrl.', link: null },
-  { title: 'أكد النتيجة', text: 'اعتمد على webhook + استعلام الحالة قبل تسليم المنتج أو الخدمة.', link: '/merchant/payments', linkText: 'المدفوعات' }
-]
+const approvedPlatforms = computed(() => (platforms.value || []).filter(p => p.status === 'Approved'))
+const sampleDomain = computed(() => approvedPlatforms.value[0]?.domain || 'shop.example.com')
+const sampleKey = 'YOUR_PLATFORM_API_KEY'
+
+const steps = computed(() => [
+  { title: t('docs.step1Title'), text: t('docs.step1Body'), link: '/merchant', linkText: t('nav.overview') },
+  { title: t('docs.step2Title'), text: t('docs.step2Body'), link: '/merchant/platforms', linkText: t('nav.platforms') },
+  { title: t('docs.step3Title'), text: t('docs.step3Body'), link: null },
+  { title: t('docs.step4Title'), text: t('docs.step4Body'), link: '/merchant/payments', linkText: t('nav.payments') }
+])
+
+const flow = computed(() => [
+  t('docs.flow1'),
+  t('docs.flow2'),
+  t('docs.flow3'),
+  t('docs.flow4')
+])
+
+const fields = computed(() => [
+  { field: 'amount', required: t('docs.yes'), desc: t('docs.fieldAmount') },
+  { field: 'serviceType', required: t('docs.yes'), desc: t('docs.fieldService') },
+  { field: 'orderId', required: t('docs.no'), desc: t('docs.fieldOrder') },
+  { field: 'callbackUrl', required: t('docs.optional'), desc: t('docs.fieldCallback') },
+  { field: 'successUrl', required: t('docs.optional'), desc: t('docs.fieldSuccess') },
+  { field: 'failureUrl', required: t('docs.optional'), desc: t('docs.fieldFailure') }
+])
+
+const providers = computed(() => [
+  { name: 'FIB', desc: t('docs.provFib') },
+  { name: 'Zain Cash', desc: t('docs.provZain') },
+  { name: 'QI', desc: t('docs.provQi') },
+  { name: 'SuperQi', desc: t('docs.provSuperQi') }
+])
 
 const createExample = computed(() => `curl -X POST ${API_BASE}/v1/payments \\
-  -H "X-Api-Key: YOUR_API_KEY" \\
+  -H "X-Api-Key: ${sampleKey}" \\
   -H "Content-Type: application/json" \\
   -H "X-Idempotency-Key: order-1001" \\
+  -H "Origin: https://${sampleDomain.value}" \\
   -d '{
     "amount": 5000,
-    "serviceType": "اشتراك شهري",
-    "callbackUrl": "https://yoursite.com/hooks/fynexpay",
-    "successUrl": "https://yoursite.com/success"
+    "serviceType": "Monthly subscription",
+    "callbackUrl": "https://${sampleDomain.value}/hooks/fynexpay",
+    "successUrl": "https://${sampleDomain.value}/success",
+    "failureUrl": "https://${sampleDomain.value}/failed"
   }'`)
 
 const createResponse = `{
   "id": "5bac8b83-....",
+  "merchantPlatformId": "96590372-....",
   "orderId": "ORD-....",
   "amount": 5000,
   "status": "Pending",
   "provider": "PendingSelection",
-  "description": "اشتراك شهري",
-  "checkoutUrl": "http://localhost:5080/checkout/....",
-  "availableProviders": ["Qi", "ZainCash", "Fib"],
+  "checkoutUrl": "${API_BASE}/checkout/....",
+  "availableProviders": ["Qi", "ZainCash", "Fib", "SuperQi"],
   "platformFee": 125,
   "netAmount": 4875
 }`
 
 const statusExample = computed(() => `curl ${API_BASE}/v1/payments/PAYMENT_ID \\
-  -H "X-Api-Key: YOUR_API_KEY"`)
+  -H "X-Api-Key: ${sampleKey}" \\
+  -H "Origin: https://${sampleDomain.value}"`)
 
 const webhookExample = `{
   "id": "5bac8b83-....",
@@ -178,6 +244,7 @@ const webhookExample = `{
   "currency": "IQD",
   "status": "Paid",
   "provider": "Fib",
+  "merchantPlatformId": "96590372-....",
   "platformFee": 125,
   "netAmount": 4875,
   "paidAtUtc": "2026-08-09T13:40:00Z"
@@ -206,105 +273,241 @@ async function copy(text, okMsg) {
 
 onMounted(async () => {
   try {
-    const { data } = await api.get('/api/merchant/webhook-secret')
-    secret.value = data.secret
+    const [s, p] = await Promise.all([
+      api.get('/api/merchant/webhook-secret'),
+      api.get('/api/merchant/platforms')
+    ])
+    secret.value = s.data.secret || ''
+    platforms.value = p.data || []
   } catch {
     secret.value = ''
+    platforms.value = []
   }
 })
 </script>
 
 <style scoped>
-.docs-hero { margin-bottom: 18px; }
-.docs-hero h1 { margin-bottom: 8px; }
+.platform-banner {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 20px;
+  background:
+    radial-gradient(700px 220px at 100% 0%, rgba(108, 60, 236, 0.12), transparent 55%),
+    #fff;
+  border-color: rgba(108, 60, 236, 0.18);
+}
+.eyebrow {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--brand-secondary);
+  background: var(--brand-soft);
+  border-radius: 999px;
+  padding: 5px 10px;
+  margin-bottom: 10px;
+}
+.banner-copy h2 {
+  margin: 0 0 8px;
+  color: var(--brand);
+  font-size: 1.25rem;
+}
+.banner-copy p {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-weight: 600;
+  line-height: 1.6;
+}
+.rules {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+.rules li {
+  position: relative;
+  padding-inline-start: 18px;
+  color: var(--brand);
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+.rules li::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0.55em;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--brand-secondary);
+}
+.platform-list { display: grid; gap: 10px; }
+.platform-pill {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #f8fafc;
+}
+.platform-pill strong { color: var(--brand); }
+.platform-pill .mono { font-size: 0.82rem; color: var(--muted); }
+.empty-platform {
+  border: 1px dashed rgba(108, 60, 236, 0.35);
+  border-radius: 16px;
+  padding: 18px;
+  background: rgba(108, 60, 236, 0.04);
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+.empty-platform p { margin: 0; color: var(--muted); font-weight: 600; }
+
 .steps {
   display: grid;
+  grid-template-columns: repeat(4, 1fr);
   gap: 12px;
   margin-bottom: 18px;
 }
 .step {
+  margin: 0;
   display: grid;
-  grid-template-columns: 44px 1fr;
-  gap: 14px;
-  align-items: start;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 16px;
+  gap: 12px;
+  align-content: start;
 }
 .num {
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   display: grid;
   place-items: center;
-  background: rgba(15, 107, 92, 0.12);
-  color: var(--brand-dark);
-  font-weight: 700;
+  font-weight: 800;
+  color: #fff;
+  background: linear-gradient(145deg, var(--brand), var(--brand-secondary));
+  box-shadow: 0 10px 20px rgba(108, 60, 236, 0.25);
 }
-.step h3 { margin: 0 0 6px; }
+.step-body h3 { margin: 0 0 6px; color: var(--brand); font-size: 0.98rem; }
+.step-body p { margin: 0 0 12px; color: var(--muted); font-size: 0.88rem; font-weight: 600; line-height: 1.5; }
+.btn.sm { padding: 8px 12px; font-size: 0.82rem; box-shadow: none; }
+
 .flow {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
   gap: 10px;
-  align-items: center;
 }
 .flow-item {
-  background: rgba(15, 107, 92, 0.08);
-  border-radius: 12px;
-  padding: 10px 14px;
-  font-weight: 600;
-}
-.arrow { color: var(--muted); }
-.row.between { justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.card h2 { margin-top: 0; }
-.code {
-  background: #15221f;
-  color: #d7fff2;
-  border-radius: 14px;
+  display: grid;
+  gap: 8px;
   padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: #f8fafc;
+  font-weight: 700;
+  color: var(--brand);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+.flow-n {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-size: 0.75rem;
+  background: var(--brand-soft);
+  color: var(--brand-secondary);
+}
+
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+.section-head h2, .card > h2 { margin: 0 0 6px; color: var(--brand); }
+.section-head .muted, .card > .muted { margin: 0; }
+.card h3 {
+  margin: 18px 0 10px;
+  font-size: 0.95rem;
+  color: var(--brand);
+}
+.code {
+  background: #031838;
+  color: #e2e8f0;
+  border-radius: 16px;
+  padding: 14px 16px;
   overflow: auto;
-  font-size: 0.86rem;
+  font-size: 0.82rem;
   line-height: 1.55;
   white-space: pre-wrap;
+  margin: 0;
 }
-.bullets { margin: 10px 0 0; padding-right: 18px; color: var(--muted); line-height: 1.8; }
+.table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 14px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 11px 12px; text-align: start; border-bottom: 1px solid var(--line); font-size: 0.9rem; }
+th { background: #f8fafc; color: var(--muted); font-size: 0.78rem; }
+tr:last-child td { border-bottom: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.bullets {
+  margin: 0 0 12px;
+  padding-inline-start: 18px;
+  color: var(--muted);
+  font-weight: 600;
+  line-height: 1.8;
+}
+.copy-box {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: #f8fafc;
+  overflow: auto;
+}
 .providers {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-top: 12px;
 }
 .provider {
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 14px;
-  background: #fff;
+  background: #f8fafc;
+  display: grid;
+  gap: 6px;
 }
-.provider h3 { margin: 0 0 6px; }
-.tip { border-color: rgba(196, 92, 38, 0.28); }
-.copy-box {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 10px 12px;
-  margin: 12px 0;
-  overflow: auto;
+.provider strong { color: var(--brand); }
+.provider span { color: var(--muted); font-size: 0.85rem; font-weight: 600; }
+.tip {
+  background:
+    radial-gradient(600px 180px at 0% 0%, rgba(108, 60, 236, 0.08), transparent 55%),
+    #fff;
 }
+.actions { margin-top: 14px; gap: 10px; flex-wrap: wrap; }
 .toast {
   position: fixed;
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--brand-dark);
+  background: var(--brand);
   color: #fff;
   padding: 12px 18px;
   border-radius: 999px;
   z-index: 40;
+  font-weight: 700;
+  box-shadow: var(--shadow);
+}
+@media (max-width: 1100px) {
+  .steps, .flow, .providers { grid-template-columns: 1fr 1fr; }
+  .platform-banner { grid-template-columns: 1fr; }
 }
 @media (max-width: 700px) {
-  .flow .arrow { display: none; }
+  .steps, .flow, .providers { grid-template-columns: 1fr; }
+  .section-head { flex-direction: column; }
 }
 </style>

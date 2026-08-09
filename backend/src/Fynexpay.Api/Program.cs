@@ -1,6 +1,8 @@
 using Fynexpay.Application;
+using Fynexpay.Api.Cors;
 using Fynexpay.Api.Middleware;
 using Fynexpay.Infrastructure;
+using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -9,6 +11,7 @@ builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSingleton<ICorsPolicyProvider, DynamicCorsPolicyProvider>();
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo
@@ -57,8 +60,8 @@ builder.Services.AddSwaggerGen(c =>
 
 builder.Services.AddCors(options =>
 {
-    options.AddDefaultPolicy(policy =>
-        policy.AllowAnyHeader().AllowAnyMethod().AllowAnyOrigin());
+    // Actual origins come from DynamicCorsPolicyProvider
+    options.AddDefaultPolicy(_ => { });
 });
 
 var app = builder.Build();
@@ -79,7 +82,15 @@ app.UseSwaggerUI(c =>
     c.DocumentTitle = "Fynexpay Swagger";
 });
 
+var uploadsRoot = Path.Combine(app.Environment.ContentRootPath, "wwwroot");
+Directory.CreateDirectory(Path.Combine(uploadsRoot, "uploads", "providers"));
+
 app.UseCors();
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(uploadsRoot),
+    RequestPath = ""
+});
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<ApiKeyAuthenticationMiddleware>();
