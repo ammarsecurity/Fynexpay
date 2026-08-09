@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Fynexpay.Api/Fynexpay.Api.csproj" />
+    <Project Path="src/Fynexpay.Application/Fynexpay.Application.csproj" />
+    <Project Path="src/Fynexpay.Domain/Fynexpay.Domain.csproj" />
+    <Project Path="src/Fynexpay.Infrastructure/Fynexpay.Infrastructure.csproj" />
+  </Folder>
+</Solution>

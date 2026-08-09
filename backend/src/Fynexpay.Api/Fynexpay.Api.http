@@ -1,0 +1,6 @@
+@Fynexpay.Api_HostAddress = http://localhost:5180
+
+GET {{Fynexpay.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

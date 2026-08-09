@@ -1,0 +1,125 @@
+using System.Text;
+using Fynexpay.Application.Abstractions;
+using Fynexpay.Application.Abstractions.Payments;
+using Fynexpay.Application.Services;
+using Fynexpay.Domain.Entities;
+using Fynexpay.Domain.Enums;
+using Fynexpay.Infrastructure.Auth;
+using Fynexpay.Infrastructure.Payments;
+using Fynexpay.Infrastructure.Persistence;
+using Fynexpay.Infrastructure.Webhooks;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.Tokens;
+
+namespace Fynexpay.Infrastructure;
+
+public static class DependencyInjection
+{
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<AppOptions>(configuration.GetSection("App"));
+        services.Configure<PaymentProvidersOptions>(configuration.GetSection("PaymentProviders"));
+
+        var connectionString = configuration.GetConnectionString("Default")
+            ?? "Server=localhost;Port=3306;Database=fynexpay;User=root;Password=root;";
+
+        services.AddDbContext<AppDbContext>(options =>
+            options.UseMySql(connectionString, new MySqlServerVersion(new Version(8, 0, 36))));
+
+        services.AddScoped<IAppDbContext>(sp => sp.GetRequiredService<AppDbContext>());
+        services.AddScoped<IPasswordHasher, PasswordHasher>();
+        services.AddScoped<IApiKeyService, ApiKeyService>();
+        services.AddScoped<IJwtTokenService, JwtTokenService>();
+        services.AddScoped<IMerchantWebhookSender, MerchantWebhookSender>();
+        services.AddScoped<IProviderSettingsService, ProviderSettingsService>();
+        services.AddScoped<IPaymentProviderResolver, PaymentProviderResolver>();
+        services.AddScoped<IPaymentProvider, FibPaymentProvider>();
+        services.AddScoped<IPaymentProvider, ZainCashPaymentProvider>();
+        services.AddScoped<IPaymentProvider, QiPaymentProvider>();
+        services.AddScoped<IPaymentProvider, SuperQiPaymentProvider>();
+
+        services.AddHttpClient("merchant-webhooks").ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(15));
+        services.AddHttpClient("fib");
+        services.AddHttpClient("fib-auth");
+        services.AddHttpClient("zaincash");
+        services.AddHttpClient("qi");
+
+        var jwtKey = configuration["Jwt:Key"] ?? "FynexpayDevSecretKey_ChangeMe_32chars!!";
+        services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
+            {
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuer = true,
+                    ValidateAudience = true,
+                    ValidateLifetime = true,
+                    ValidateIssuerSigningKey = true,
+                    ValidIssuer = configuration["Jwt:Issuer"] ?? "Fynexpay",
+                    ValidAudience = configuration["Jwt:Audience"] ?? "Fynexpay",
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+                };
+            });
+
+        services.AddAuthorization();
+        return services;
+    }
+
+    public static async Task SeedAsync(IServiceProvider services)
+    {
+        using var scope = services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await db.Database.EnsureCreatedAsync();
+        await EnsureSchemaAsync(db);
+
+        if (!await db.Users.AnyAsync(u => u.Role == UserRole.Admin))
+        {
+            var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
+            db.Users.Add(new User
+            {
+                Email = "admin@fynexpay.iq",
+                FullName = "مدير المنصة",
+                PasswordHash = hasher.Hash("Admin@12345"),
+                Role = UserRole.Admin,
+                IsActive = true
+            });
+            await db.SaveChangesAsync();
+        }
+    }
+
+    private static async Task EnsureSchemaAsync(AppDbContext db)
+    {
+        await EnsureColumnAsync(db, "Merchants", "FibEnabled", "TINYINT(1) NOT NULL DEFAULT 1");
+        await EnsureColumnAsync(db, "Merchants", "ZainCashEnabled", "TINYINT(1) NOT NULL DEFAULT 1");
+        await EnsureColumnAsync(db, "Merchants", "QiEnabled", "TINYINT(1) NOT NULL DEFAULT 1");
+        await EnsureColumnAsync(db, "Merchants", "SuperQiEnabled", "TINYINT(1) NOT NULL DEFAULT 1");
+        await EnsureColumnAsync(db, "Payments", "ProviderCheckoutUrl", "longtext NULL");
+    }
+
+    private static async Task EnsureColumnAsync(AppDbContext db, string table, string column, string definition)
+    {
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+            await conn.OpenAsync();
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT COUNT(*) FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = @table AND COLUMN_NAME = @column
+            """;
+        var pTable = cmd.CreateParameter();
+        pTable.ParameterName = "@table";
+        pTable.Value = table;
+        cmd.Parameters.Add(pTable);
+        var pCol = cmd.CreateParameter();
+        pCol.ParameterName = "@column";
+        pCol.Value = column;
+        cmd.Parameters.Add(pCol);
+
+        var exists = Convert.ToInt64(await cmd.ExecuteScalarAsync()) > 0;
+        if (!exists)
+            await db.Database.ExecuteSqlRawAsync($"ALTER TABLE `{table}` ADD COLUMN `{column}` {definition}");
+    }
+}
