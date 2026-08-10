@@ -18,39 +18,78 @@
     />
 
     <div class="card">
-      <p v-if="!items.length" class="muted">{{ $t('common.noResults') }}</p>
-      <div v-else class="list">
-        <article v-for="p in items" :key="p.id" class="item">
-          <div class="logo-frame" :class="{ empty: !p.logoUrl }">
-            <img v-if="p.logoUrl" :src="logoSrc(p.logoUrl)" :alt="p.name" width="56" height="56" />
-            <span v-else class="logo-ph">—</span>
-          </div>
-          <div class="main">
-            <div class="title-row">
-              <strong>{{ p.name }}</strong>
-              <span class="badge" :class="statusClass(p.status)">{{ $t(`status.${p.status}`, p.status) }}</span>
-            </div>
-            <div class="meta muted">
-              <span>{{ p.merchantName || '—' }}</span>
-              <span class="mono" dir="ltr">{{ p.domain }}</span>
-              <span>{{ when(p.createdAtUtc) }}</span>
-            </div>
-            <label class="field notes-field">
-              <span>{{ $t('platforms.adminNotes') }}</span>
-              <input v-model="notes[p.id]" :placeholder="$t('platforms.adminNotesPh')" />
-            </label>
-            <p v-if="p.oneTimeApiKey" class="key-hint mono" dir="ltr">API: {{ p.oneTimeApiKey }}</p>
-          </div>
-          <div class="actions">
-            <button class="btn" type="button" @click="review(p, 'approve')">{{ $t('platforms.approve') }}</button>
-            <button class="btn secondary" type="button" @click="review(p, 'suspend')">{{ $t('platforms.suspend') }}</button>
-            <button class="btn danger" type="button" @click="review(p, 'reject')">{{ $t('platforms.reject') }}</button>
-          </div>
-        </article>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>{{ $t('platforms.name') }}</th>
+              <th>{{ $t('merchants.business') }}</th>
+              <th>{{ $t('platforms.domain') }}</th>
+              <th>{{ $t('common.status') }}</th>
+              <th>{{ $t('platforms.createdAt') }}</th>
+              <th>{{ $t('common.actions') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="p in items" :key="p.id">
+              <td>
+                <div class="plat-cell">
+                  <div class="logo-frame" :class="{ empty: !p.logoUrl }">
+                    <img v-if="p.logoUrl" :src="logoSrc(p.logoUrl)" :alt="p.name" width="36" height="36" />
+                    <span v-else>{{ initial(p.name) }}</span>
+                  </div>
+                  <div class="plat-meta">
+                    <strong>{{ p.name }}</strong>
+                    <span v-if="p.apiKeyPrefix" class="mono muted" dir="ltr">{{ p.apiKeyPrefix }}…</span>
+                  </div>
+                </div>
+              </td>
+              <td>{{ p.merchantName || '—' }}</td>
+              <td><span class="mono" dir="ltr">{{ p.domain }}</span></td>
+              <td>
+                <span class="badge" :class="statusClass(p.status)">
+                  {{ $t(`status.${p.status}`, p.status) }}
+                </span>
+              </td>
+              <td class="muted date-cell">{{ when(p.createdAtUtc) }}</td>
+              <td>
+                <div class="row-actions">
+                  <button class="btn secondary" type="button" @click="openDetails(p)">{{ $t('platforms.allDetails') }}</button>
+                  <button
+                    v-if="p.status !== 'Approved'"
+                    class="btn"
+                    type="button"
+                    @click="review(p, 'approve')"
+                  >{{ $t('platforms.approve') }}</button>
+                  <button
+                    v-if="p.status === 'Approved'"
+                    class="btn secondary"
+                    type="button"
+                    @click="review(p, 'suspend')"
+                  >{{ $t('platforms.suspend') }}</button>
+                  <button
+                    v-if="p.status === 'Pending'"
+                    class="btn danger"
+                    type="button"
+                    @click="review(p, 'reject')"
+                  >{{ $t('platforms.reject') }}</button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
+      <p v-if="!items.length" class="muted empty">{{ $t('common.noResults') }}</p>
       <p v-if="msg" class="ok-msg">{{ msg }}</p>
       <p v-if="error" class="error">{{ error }}</p>
     </div>
+
+    <PlatformDetailsModal
+      :open="!!selectedId"
+      :platform-id="selectedId"
+      @close="selectedId = ''"
+      @changed="load"
+    />
   </div>
 </template>
 
@@ -59,28 +98,42 @@ import { onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api, API_BASE } from '../../api'
 import DataToolbar from '../../components/DataToolbar.vue'
+import PlatformDetailsModal from '../../components/PlatformDetailsModal.vue'
 
 const { t, locale } = useI18n()
 const items = ref([])
-const notes = reactive({})
-const filters = reactive({ q: '', status: 'Pending' })
-const applied = reactive({ q: '', status: 'Pending' })
+const filters = reactive({ q: '', status: '' })
+const applied = reactive({ q: '', status: '' })
 const msg = ref('')
 const error = ref('')
+const selectedId = ref('')
+
+function openDetails(p) {
+  selectedId.value = p.id
+}
 
 function statusClass(s) {
   if (s === 'Approved') return 'ok'
   if (s === 'Pending') return 'warn'
   return 'danger'
 }
+
 function when(v) {
   if (!v) return '—'
-  return new Date(v).toLocaleString(locale.value === 'ar' ? 'ar-IQ' : 'en-GB')
+  return new Date(v).toLocaleString(locale.value === 'ar' ? 'ar-IQ' : 'en-GB', {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  })
 }
+
 function logoSrc(url) {
   if (!url) return ''
   if (url.startsWith('http')) return url
   return `${API_BASE}${url}`
+}
+
+function initial(name) {
+  return (name || '?').trim().slice(0, 1).toUpperCase()
 }
 
 async function load() {
@@ -91,9 +144,6 @@ async function load() {
     }
   })
   items.value = data || []
-  for (const p of items.value) {
-    if (notes[p.id] == null) notes[p.id] = p.adminNotes || ''
-  }
 }
 
 function applyFilters() {
@@ -101,6 +151,7 @@ function applyFilters() {
   applied.status = filters.status
   load()
 }
+
 function resetFilters() {
   filters.q = ''
   filters.status = ''
@@ -113,11 +164,11 @@ async function review(p, action) {
   try {
     const { data } = await api.patch(`/api/admin/platforms/${p.id}`, {
       action,
-      adminNotes: notes[p.id] || null
+      adminNotes: p.adminNotes || null
     })
     if (data.oneTimeApiKey) {
       msg.value = t('platforms.approvedWithKey')
-      p.oneTimeApiKey = data.oneTimeApiKey
+      selectedId.value = p.id
     } else {
       msg.value = t('platforms.reviewOk')
     }
@@ -131,60 +182,66 @@ onMounted(load)
 </script>
 
 <style scoped>
-.list { display: grid; gap: 12px; }
-.item {
+.table-wrap { overflow-x: auto; }
+.plat-cell {
   display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: #fafbff;
-  flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
+  gap: 10px;
+  min-width: 160px;
 }
 .logo-frame {
-  width: 56px;
-  height: 56px;
-  border-radius: 14px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   border: 1px solid var(--line);
   display: grid;
   place-items: center;
   overflow: hidden;
   flex-shrink: 0;
-  background:
-    linear-gradient(45deg, #eceff5 25%, transparent 25%),
-    linear-gradient(-45deg, #eceff5 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #eceff5 75%),
-    linear-gradient(-45deg, transparent 75%, #eceff5 75%);
-  background-size: 12px 12px;
-  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
-  background-color: #fff;
-}
-.logo-frame.empty { background: #eef1f8; }
-.logo-frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
-.logo-ph { color: var(--muted); font-size: 0.85rem; }
-.main { flex: 1; min-width: 220px; }
-.title-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; font-size: 0.85rem; }
-.notes-field { margin: 10px 0 0; max-width: 420px; }
-.notes-field span { font-size: 0.78rem; color: var(--muted); font-weight: 700; }
-.notes-field input {
-  margin-top: 4px;
-  width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 9px 12px;
-}
-.actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: start; }
-.key-hint {
-  margin: 8px 0 0;
-  padding: 8px 10px;
-  background: #021225;
-  color: #e2e8f0;
-  border-radius: 10px;
   font-size: 0.8rem;
-  overflow: auto;
+  font-weight: 800;
+  color: #fff;
+  background: linear-gradient(145deg, var(--brand), var(--brand-secondary));
 }
-.ok-msg { color: #15803d; font-weight: 700; }
+.logo-frame.empty { color: #fff; }
+.logo-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background: #fff;
+}
+.plat-meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.plat-meta strong {
+  color: var(--brand);
+  font-size: 0.92rem;
+}
+.plat-meta .muted {
+  font-size: 0.75rem;
+}
+.date-cell {
+  white-space: nowrap;
+  font-size: 0.88rem;
+}
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.row-actions .btn {
+  padding: 7px 12px;
+  font-size: 0.8rem;
+  border-radius: 10px;
+  box-shadow: none;
+}
+.empty { margin: 16px 0 0; }
+.ok-msg {
+  color: #15803d;
+  font-weight: 700;
+  margin: 12px 0 0;
+}
 </style>

@@ -1,5 +1,7 @@
 using Fynexpay.Application.Abstractions;
+using Fynexpay.Application.Abstractions.Messaging;
 using Fynexpay.Application.DTOs;
+using Fynexpay.Application.Services;
 using Fynexpay.Domain.Entities;
 using Fynexpay.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -11,12 +13,14 @@ public class MerchantPlatformService
     private readonly IAppDbContext _db;
     private readonly IApiKeyService _apiKeys;
     private readonly ISecretProtector _protector;
+    private readonly NotificationService _notifications;
 
-    public MerchantPlatformService(IAppDbContext db, IApiKeyService apiKeys, ISecretProtector protector)
+    public MerchantPlatformService(IAppDbContext db, IApiKeyService apiKeys, ISecretProtector protector, NotificationService notifications)
     {
         _db = db;
         _apiKeys = apiKeys;
         _protector = protector;
+        _notifications = notifications;
     }
 
     public async Task<IReadOnlyList<MerchantPlatformDto>> ListForMerchantAsync(Guid merchantId, CancellationToken ct = default)
@@ -52,6 +56,55 @@ public class MerchantPlatformService
         return list.Select(p => Map(p, includeMerchantName: true)).ToList();
     }
 
+    public async Task<MerchantPlatformDetailDto> GetAdminDetailAsync(Guid platformId, CancellationToken ct = default)
+    {
+        var platform = await _db.MerchantPlatforms
+            .Include(p => p.Merchant)
+            .Include(p => p.ApiKey)
+            .FirstOrDefaultAsync(p => p.Id == platformId, ct)
+            ?? throw new InvalidOperationException("المنصة غير موجودة");
+
+        string? reviewerName = null;
+        if (platform.ReviewedByUserId.HasValue)
+        {
+            reviewerName = await _db.Users
+                .Where(u => u.Id == platform.ReviewedByUserId.Value)
+                .Select(u => u.FullName)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        var paymentsQuery = _db.Payments.Where(p => p.MerchantPlatformId == platformId);
+        var paymentsCount = await paymentsQuery.CountAsync(ct);
+        var paymentsVolume = await paymentsQuery
+            .Where(p => p.Status == PaymentStatus.Paid)
+            .SumAsync(p => (decimal?)p.Amount, ct) ?? 0;
+
+        return new MerchantPlatformDetailDto(
+            platform.Id,
+            platform.MerchantId,
+            platform.Merchant?.BusinessName,
+            platform.Merchant?.ContactEmail,
+            platform.Merchant?.ContactPhone,
+            platform.Merchant?.Status.ToString(),
+            platform.Name,
+            platform.Domain,
+            platform.LogoUrl,
+            platform.Status.ToString(),
+            platform.AdminNotes,
+            platform.CreatedAtUtc,
+            platform.UpdatedAtUtc,
+            platform.ReviewedAtUtc,
+            platform.ReviewedByUserId,
+            reviewerName,
+            platform.ApiKey?.Id,
+            platform.ApiKey is { IsActive: true } ? platform.ApiKey.KeyPrefix : platform.ApiKey?.KeyPrefix,
+            platform.ApiKey?.IsActive == true,
+            platform.ApiKey?.CreatedAtUtc,
+            !string.IsNullOrWhiteSpace(platform.OneTimeApiKey),
+            paymentsCount,
+            paymentsVolume);
+    }
+
     public async Task<MerchantPlatformDto> RequestAsync(Guid merchantId, CreateMerchantPlatformRequest request, CancellationToken ct = default)
     {
         var name = (request.Name ?? "").Trim();
@@ -71,6 +124,17 @@ public class MerchantPlatformService
         };
         _db.MerchantPlatforms.Add(entity);
         await _db.SaveChangesAsync(ct);
+
+        var merchantName = await _db.Merchants.Where(m => m.Id == merchantId).Select(m => m.BusinessName).FirstOrDefaultAsync(ct) ?? "";
+        await _notifications.NotifyAdminsSafeAsync(
+            NotificationTypes.PlatformSubmitted,
+            "طلب منصة جديد",
+            $"التاجر «{merchantName}» طلب اعتماد منصة «{name}» ({domain}).",
+            "/admin/platforms",
+            merchantId,
+            new { platformId = entity.Id, domain, name },
+            ct);
+
         return Map(entity);
     }
 
@@ -78,16 +142,24 @@ public class MerchantPlatformService
     {
         var platform = await _db.MerchantPlatforms
             .Include(p => p.ApiKey)
+            .Include(p => p.Merchant)
             .FirstOrDefaultAsync(p => p.Id == platformId && p.MerchantId == merchantId, ct)
             ?? throw new InvalidOperationException("المنصة غير موجودة");
 
+        var previousStatus = platform.Status;
+        var nameChanged = false;
         var domainChanged = false;
+
         if (request.Name != null)
         {
             var name = request.Name.Trim();
             if (string.IsNullOrWhiteSpace(name))
                 throw new ArgumentException("اسم المنصة مطلوب");
-            platform.Name = name;
+            if (!string.Equals(platform.Name, name, StringComparison.Ordinal))
+            {
+                platform.Name = name;
+                nameChanged = true;
+            }
         }
 
         if (request.Domain != null)
@@ -102,12 +174,18 @@ public class MerchantPlatformService
             }
         }
 
-        if (domainChanged && platform.Status == PlatformStatus.Approved)
+        if (!nameChanged && !domainChanged)
+            return Map(platform);
+
+        var requiresReview = previousStatus is PlatformStatus.Approved or PlatformStatus.Suspended or PlatformStatus.Rejected;
+        if (requiresReview)
         {
             platform.Status = PlatformStatus.Pending;
             platform.ReviewedAtUtc = null;
             platform.ReviewedByUserId = null;
-            platform.AdminNotes = "أُعيد الطلب للمراجعة بسبب تغيير الدومين";
+            platform.AdminNotes = domainChanged
+                ? "أُعيد الطلب للمراجعة بسبب تعديل الدومين/الاسم"
+                : "أُعيد الطلب للمراجعة بسبب تعديل بيانات المنصة";
             if (platform.ApiKey != null)
             {
                 platform.ApiKey.IsActive = false;
@@ -115,9 +193,26 @@ public class MerchantPlatformService
             }
             platform.OneTimeApiKey = null;
         }
+        else if (platform.Status == PlatformStatus.Pending)
+        {
+            platform.AdminNotes = null;
+        }
 
         platform.UpdatedAtUtc = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+
+        var merchantName = platform.Merchant?.BusinessName
+            ?? await _db.Merchants.Where(m => m.Id == merchantId).Select(m => m.BusinessName).FirstOrDefaultAsync(ct)
+            ?? "";
+        await _notifications.NotifyAdminsSafeAsync(
+            NotificationTypes.PlatformSubmitted,
+            requiresReview ? "تعديل منصة بانتظار الموافقة" : "تحديث طلب منصة",
+            $"التاجر «{merchantName}» عدّل منصة «{platform.Name}» ({platform.Domain}) وتحتاج مراجعة.",
+            "/admin/platforms",
+            merchantId,
+            new { platformId = platform.Id, domain = platform.Domain, name = platform.Name, requiresReview },
+            ct);
+
         return Map(platform);
     }
 
@@ -151,6 +246,14 @@ public class MerchantPlatformService
             }
 
             await _db.SaveChangesAsync(ct);
+            await _notifications.NotifyMerchantUsersSafeAsync(
+                platform.MerchantId,
+                NotificationTypes.PlatformApproved,
+                "تم اعتماد المنصة",
+                $"تم اعتماد منصة «{platform.Name}» ({platform.Domain}) وإصدار مفتاح API.",
+                "/merchant/platforms",
+                new { platformId = platform.Id, status = platform.Status.ToString() },
+                ct);
             var dto = Map(platform, includeMerchantName: true);
             return dto with { OneTimeApiKey = plain, HasOneTimeApiKey = true };
         }
@@ -165,6 +268,14 @@ public class MerchantPlatformService
             }
             platform.OneTimeApiKey = null;
             await _db.SaveChangesAsync(ct);
+            await _notifications.NotifyMerchantUsersSafeAsync(
+                platform.MerchantId,
+                NotificationTypes.PlatformRejected,
+                "تم رفض المنصة",
+                $"تم رفض منصة «{platform.Name}» ({platform.Domain}).",
+                "/merchant/platforms",
+                new { platformId = platform.Id, status = platform.Status.ToString() },
+                ct);
             return Map(platform, includeMerchantName: true);
         }
 
@@ -178,6 +289,14 @@ public class MerchantPlatformService
             }
             platform.OneTimeApiKey = null;
             await _db.SaveChangesAsync(ct);
+            await _notifications.NotifyMerchantUsersSafeAsync(
+                platform.MerchantId,
+                NotificationTypes.PlatformSuspended,
+                "تم تعليق المنصة",
+                $"تم تعليق منصة «{platform.Name}» ({platform.Domain}).",
+                "/merchant/platforms",
+                new { platformId = platform.Id, status = platform.Status.ToString() },
+                ct);
             return Map(platform, includeMerchantName: true);
         }
 

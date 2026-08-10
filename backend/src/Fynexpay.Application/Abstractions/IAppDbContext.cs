@@ -16,6 +16,8 @@ public interface IAppDbContext
     DbSet<PaymentEvent> PaymentEvents { get; }
     DbSet<PayoutRequest> PayoutRequests { get; }
     DbSet<PlatformSetting> PlatformSettings { get; }
+    DbSet<OtpChallenge> OtpChallenges { get; }
+    DbSet<AppNotification> Notifications { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default);
 }

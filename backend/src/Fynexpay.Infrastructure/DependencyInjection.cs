@@ -1,11 +1,13 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using Fynexpay.Application.Abstractions;
+using Fynexpay.Application.Abstractions.Messaging;
 using Fynexpay.Application.Abstractions.Payments;
 using Fynexpay.Application.Services;
 using Fynexpay.Domain.Entities;
 using Fynexpay.Domain.Enums;
 using Fynexpay.Infrastructure.Auth;
+using Fynexpay.Infrastructure.Messaging;
 using Fynexpay.Infrastructure.Payments;
 using Fynexpay.Infrastructure.Persistence;
 using Fynexpay.Infrastructure.Security;
@@ -41,6 +43,10 @@ public static class DependencyInjection
         services.AddSingleton<ISecretProtector, SecretProtector>();
         services.AddScoped<IMerchantWebhookSender, MerchantWebhookSender>();
         services.AddScoped<IProviderSettingsService, ProviderSettingsService>();
+        services.AddScoped<IUltramsgSettingsService, UltramsgSettingsService>();
+        services.AddScoped<INotificationSettingsService, NotificationSettingsService>();
+        services.AddScoped<IUltramsgClient, UltramsgClient>();
+        services.AddScoped<IEmailSender, SmtpEmailSender>();
         services.AddScoped<IPaymentProviderResolver, PaymentProviderResolver>();
         services.AddScoped<IPaymentProvider, FibPaymentProvider>();
         services.AddScoped<IPaymentProvider, ZainCashPaymentProvider>();
@@ -52,6 +58,7 @@ public static class DependencyInjection
         services.AddHttpClient("fib-auth");
         services.AddHttpClient("zaincash");
         services.AddHttpClient("qi");
+        services.AddHttpClient("ultramsg").ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
 
         var jwtKey = configuration["Jwt:Key"];
         if (string.IsNullOrWhiteSpace(jwtKey) || jwtKey.Length < 32)
@@ -126,6 +133,86 @@ public static class DependencyInjection
         await EnsureColumnAsync(db, "ApiKeys", "MerchantPlatformId", "char(36) NULL");
         await EnsureColumnAsync(db, "Payments", "MerchantPlatformId", "char(36) NULL");
         await EnsureColumnAsync(db, "MerchantPlatforms", "LogoUrl", "varchar(500) NULL");
+        await EnsureColumnAsync(db, "Payments", "CustomerPhone", "varchar(20) NULL");
+        await EnsureColumnAsync(db, "Payments", "CustomerPhoneVerifiedAtUtc", "datetime(6) NULL");
+        await EnsureColumnAsync(db, "Payments", "CustomerEmail", "varchar(256) NULL");
+        await EnsureOtpChallengesTableAsync(db);
+        await EnsureColumnAsync(db, "OtpChallenges", "TargetEmail", "varchar(256) NULL");
+        await EnsureNotificationsTableAsync(db);
+    }
+
+    private static async Task EnsureNotificationsTableAsync(AppDbContext db)
+    {
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+            await conn.OpenAsync();
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT COUNT(*) FROM information_schema.TABLES
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'Notifications'
+            """;
+        var exists = Convert.ToInt64(await cmd.ExecuteScalarAsync()) > 0;
+        if (exists) return;
+
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE `Notifications` (
+              `Id` char(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
+              `UserId` char(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
+              `MerchantId` char(36) CHARACTER SET ascii COLLATE ascii_general_ci NULL,
+              `Type` varchar(64) NOT NULL,
+              `Title` varchar(200) NOT NULL,
+              `Body` varchar(1000) NOT NULL,
+              `LinkUrl` varchar(500) NULL,
+              `PayloadJson` longtext NULL,
+              `IsRead` tinyint(1) NOT NULL,
+              `ReadAtUtc` datetime(6) NULL,
+              `EmailSent` tinyint(1) NOT NULL,
+              `WhatsAppSent` tinyint(1) NOT NULL,
+              `CreatedAtUtc` datetime(6) NOT NULL,
+              `UpdatedAtUtc` datetime(6) NULL,
+              PRIMARY KEY (`Id`),
+              KEY `IX_Notifications_UserId_IsRead_CreatedAtUtc` (`UserId`, `IsRead`, `CreatedAtUtc`),
+              KEY `IX_Notifications_MerchantId` (`MerchantId`)
+            ) CHARACTER SET utf8mb4;
+            """);
+    }
+
+    private static async Task EnsureOtpChallengesTableAsync(AppDbContext db)
+    {
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+            await conn.OpenAsync();
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT COUNT(*) FROM information_schema.TABLES
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'OtpChallenges'
+            """;
+        var exists = Convert.ToInt64(await cmd.ExecuteScalarAsync()) > 0;
+        if (exists) return;
+
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE `OtpChallenges` (
+              `Id` char(36) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
+              `Purpose` int NOT NULL,
+              `PhoneE164` varchar(20) NOT NULL,
+              `CodeHash` varchar(128) NOT NULL,
+              `ExpiresAtUtc` datetime(6) NOT NULL,
+              `Attempts` int NOT NULL,
+              `MaxAttempts` int NOT NULL,
+              `Consumed` tinyint(1) NOT NULL,
+              `PaymentId` char(36) CHARACTER SET ascii COLLATE ascii_general_ci NULL,
+              `TargetEmail` varchar(256) NULL,
+              `PayloadJson` longtext NULL,
+              `LastSentAtUtc` datetime(6) NULL,
+              `CreatedAtUtc` datetime(6) NOT NULL,
+              `UpdatedAtUtc` datetime(6) NULL,
+              PRIMARY KEY (`Id`),
+              KEY `IX_OtpChallenges_PaymentId` (`PaymentId`),
+              KEY `IX_OtpChallenges_Purpose_PhoneE164_CreatedAtUtc` (`Purpose`, `PhoneE164`, `CreatedAtUtc`)
+            ) CHARACTER SET utf8mb4;
+            """);
     }
 
     private static async Task EnsureMerchantPlatformsTableAsync(AppDbContext db)

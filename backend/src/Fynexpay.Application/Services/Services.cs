@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Fynexpay.Application.Abstractions;
+using Fynexpay.Application.Abstractions.Messaging;
 using Fynexpay.Application.Abstractions.Payments;
 using Fynexpay.Application.DTOs;
 using Fynexpay.Application.Security;
@@ -17,32 +18,103 @@ public class AuthService
     private readonly IAppDbContext _db;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenService _jwt;
+    private readonly OtpService _otp;
+    private readonly IUltramsgSettingsService _ultramsgSettings;
+    private readonly NotificationService _notifications;
 
-    public AuthService(IAppDbContext db, IPasswordHasher passwordHasher, IJwtTokenService jwt)
+    public AuthService(
+        IAppDbContext db,
+        IPasswordHasher passwordHasher,
+        IJwtTokenService jwt,
+        OtpService otp,
+        IUltramsgSettingsService ultramsgSettings,
+        NotificationService notifications)
     {
         _db = db;
         _passwordHasher = passwordHasher;
         _jwt = jwt;
+        _otp = otp;
+        _ultramsgSettings = ultramsgSettings;
+        _notifications = notifications;
+    }
+
+    public async Task<AuthPolicyDto> GetRegisterPolicyAsync(CancellationToken ct = default)
+    {
+        var s = await _ultramsgSettings.GetAsync(ct);
+        var required = s.Enabled && s.RequireMerchantRegisterOtp && (s.UsesWhatsApp() || s.UsesEmail());
+        return new AuthPolicyDto(required, s.UsesWhatsApp(), s.UsesEmail(), s.Channel);
+    }
+
+    public async Task<OtpSendResultDto> SendRegisterOtpAsync(RegisterMerchantRequest request, CancellationToken ct = default)
+    {
+        var s = await _ultramsgSettings.GetAsync(ct);
+        if (!s.Enabled || !s.RequireMerchantRegisterOtp)
+            throw new InvalidOperationException("تأكيد OTP للتسجيل غير مطلوب حالياً");
+
+        var result = await _otp.SendMerchantRegisterOtpAsync(request, ct);
+        return new OtpSendResultDto(result.ChallengeId, result.MaskedDestination, result.ExpiresInSeconds, result.DevCode, result.Via);
     }
 
     public async Task<AuthResponse> RegisterMerchantAsync(RegisterMerchantRequest request, CancellationToken ct = default)
     {
-        PasswordRules.ValidateEmail(request.Email);
-        PasswordRules.Validate(request.Password);
-        PasswordRules.ValidateRequired(request.FullName, "الاسم الكامل");
-        PasswordRules.ValidateRequired(request.BusinessName, "اسم النشاط");
+        var s = await _ultramsgSettings.GetAsync(ct);
+        if (s.Enabled && s.RequireMerchantRegisterOtp && (s.UsesWhatsApp() || s.UsesEmail()))
+            throw new InvalidOperationException("يجب تأكيد رمز التحقق أولاً عبر /api/auth/register/send-otp ثم verify");
 
-        var email = request.Email.Trim().ToLowerInvariant();
+        return await CreateMerchantAccountAsync(
+            request.Email,
+            request.Password,
+            request.FullName,
+            request.BusinessName,
+            request.BusinessNameAr,
+            request.ContactPhone,
+            request.WebsiteUrl,
+            ct);
+    }
+
+    public async Task<AuthResponse> VerifyRegisterOtpAsync(VerifyRegisterOtpRequest request, CancellationToken ct = default)
+    {
+        await _otp.ConsumeMerchantRegisterChallengeAsync(request.ChallengeId, request.Code, ct);
+        var pending = await _otp.GetPendingRegistrationAsync(request.ChallengeId, ct);
+        var auth = await CreateMerchantAccountAsync(
+            pending.Email,
+            pending.Password,
+            pending.FullName,
+            pending.BusinessName,
+            pending.BusinessNameAr,
+            pending.ContactPhone,
+            pending.WebsiteUrl,
+            ct);
+        await _otp.InvalidateChallengeAsync(request.ChallengeId, ct);
+        return auth;
+    }
+
+    private async Task<AuthResponse> CreateMerchantAccountAsync(
+        string emailRaw,
+        string password,
+        string fullName,
+        string businessName,
+        string? businessNameAr,
+        string? contactPhone,
+        string? websiteUrl,
+        CancellationToken ct)
+    {
+        PasswordRules.ValidateEmail(emailRaw);
+        PasswordRules.Validate(password);
+        PasswordRules.ValidateRequired(fullName, "الاسم الكامل");
+        PasswordRules.ValidateRequired(businessName, "اسم النشاط");
+
+        var email = emailRaw.Trim().ToLowerInvariant();
         if (await _db.Users.AnyAsync(u => u.Email == email, ct))
             throw new InvalidOperationException("البريد الإلكتروني مستخدم مسبقاً");
 
         var merchant = new Merchant
         {
-            BusinessName = request.BusinessName.Trim(),
-            BusinessNameAr = string.IsNullOrWhiteSpace(request.BusinessNameAr) ? null : request.BusinessNameAr.Trim(),
+            BusinessName = businessName.Trim(),
+            BusinessNameAr = string.IsNullOrWhiteSpace(businessNameAr) ? null : businessNameAr.Trim(),
             ContactEmail = email,
-            ContactPhone = request.ContactPhone?.Trim(),
-            WebsiteUrl = request.WebsiteUrl?.Trim(),
+            ContactPhone = contactPhone?.Trim(),
+            WebsiteUrl = websiteUrl?.Trim(),
             Status = MerchantStatus.Pending,
             CommissionPercent = 2.5m,
             WebhookSecret = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant()
@@ -52,9 +124,9 @@ public class AuthService
         var user = new User
         {
             Email = email,
-            FullName = request.FullName.Trim(),
-            Phone = request.ContactPhone?.Trim(),
-            PasswordHash = _passwordHasher.Hash(request.Password),
+            FullName = fullName.Trim(),
+            Phone = contactPhone?.Trim(),
+            PasswordHash = _passwordHasher.Hash(password),
             Role = UserRole.MerchantOwner,
             Merchant = merchant
         };
@@ -63,6 +135,15 @@ public class AuthService
         _db.Wallets.Add(wallet);
         _db.Users.Add(user);
         await _db.SaveChangesAsync(ct);
+
+        await _notifications.NotifyAdminsSafeAsync(
+            NotificationTypes.MerchantRegistered,
+            "تاجر جديد بانتظار التفعيل",
+            $"سجّل التاجر «{merchant.BusinessName}» ({email}) وهو بانتظار موافقة الإدارة.",
+            "/admin/merchants",
+            merchant.Id,
+            new { merchantId = merchant.Id, businessName = merchant.BusinessName, email },
+            ct);
 
         var token = _jwt.CreateToken(user.Id, user.Email, user.Role.ToString(), merchant.Id, user.FullName);
         return new AuthResponse(token, user.Id, user.Email, user.FullName, user.Role.ToString(), merchant.Id, merchant.Status.ToString());
@@ -92,6 +173,7 @@ public class PaymentService
     private readonly IPaymentProviderResolver _resolver;
     private readonly IProviderSettingsService _providerSettings;
     private readonly IMerchantWebhookSender _webhookSender;
+    private readonly NotificationService _notifications;
     private readonly ILogger<PaymentService> _logger;
     private readonly string _publicBaseUrl;
 
@@ -100,6 +182,7 @@ public class PaymentService
         IPaymentProviderResolver resolver,
         IProviderSettingsService providerSettings,
         IMerchantWebhookSender webhookSender,
+        NotificationService notifications,
         ILogger<PaymentService> logger,
         Microsoft.Extensions.Options.IOptions<AppOptions> options)
     {
@@ -107,6 +190,7 @@ public class PaymentService
         _resolver = resolver;
         _providerSettings = providerSettings;
         _webhookSender = webhookSender;
+        _notifications = notifications;
         _logger = logger;
         _publicBaseUrl = options.Value.PublicBaseUrl.TrimEnd('/');
     }
@@ -187,7 +271,8 @@ public class PaymentService
             IdempotencyKey = idempotencyKey,
             PlatformFee = fee,
             NetAmount = net,
-            ExpiredAtUtc = DateTime.UtcNow.AddHours(2)
+            ExpiredAtUtc = DateTime.UtcNow.AddHours(2),
+            CustomerPhone = string.IsNullOrWhiteSpace(request.CustomerPhone) ? null : request.CustomerPhone.Trim()
         };
 
         _db.Payments.Add(payment);
@@ -470,6 +555,18 @@ public class PaymentService
         await _db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
 
+        if (effective == PaymentStatus.Paid && previous != PaymentStatus.Paid)
+        {
+            await _notifications.NotifyMerchantUsersSafeAsync(
+                payment.MerchantId,
+                NotificationTypes.PaymentPaid,
+                "تم استلام دفعة جديدة",
+                $"دفعة بمبلغ {payment.Amount:N0} {payment.Currency} عبر {payment.Provider}.",
+                "/merchant/payments",
+                new { paymentId = payment.Id, amount = payment.Amount, currency = payment.Currency, provider = payment.Provider.ToString() },
+                ct);
+        }
+
         try
         {
             await _webhookSender.SendPaymentUpdateAsync(payment.Id, ct);
@@ -712,8 +809,13 @@ public class WalletService
 public class PayoutService
 {
     private readonly IAppDbContext _db;
+    private readonly NotificationService _notifications;
 
-    public PayoutService(IAppDbContext db) => _db = db;
+    public PayoutService(IAppDbContext db, NotificationService notifications)
+    {
+        _db = db;
+        _notifications = notifications;
+    }
 
     public async Task<PayoutDto> CreateAsync(Guid merchantId, CreatePayoutRequest request, CancellationToken ct = default)
     {
@@ -757,6 +859,16 @@ public class PayoutService
 
         await _db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+
+        await _notifications.NotifyAdminsSafeAsync(
+            NotificationTypes.PayoutRequested,
+            "طلب سحب جديد",
+            $"طلب سحب بمبلغ {payout.Amount:N0} {payout.Currency} من تاجر {merchant.BusinessName}.",
+            "/admin/payouts",
+            merchantId,
+            new { payoutId = payout.Id, amount = payout.Amount, merchantId },
+            ct);
+
         return Map(payout);
     }
 
@@ -833,6 +945,18 @@ public class PayoutService
         wallet.UpdatedAtUtc = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+
+        var (type, title, body) = payout.Status switch
+        {
+            PayoutStatus.Approved => (NotificationTypes.PayoutApproved, "تمت الموافقة على طلب السحب", $"تمت الموافقة على سحب {payout.Amount:N0} {payout.Currency}."),
+            PayoutStatus.Completed => (NotificationTypes.PayoutCompleted, "تم إتمام السحب", $"تم تحويل مبلغ {payout.Amount:N0} {payout.Currency} بنجاح."),
+            PayoutStatus.Rejected => (NotificationTypes.PayoutRejected, "تم رفض طلب السحب", $"تم رفض سحب {payout.Amount:N0} {payout.Currency}." + (string.IsNullOrWhiteSpace(payout.AdminNote) ? "" : $" ملاحظة: {payout.AdminNote}")),
+            _ => (NotificationTypes.PayoutApproved, "تحديث طلب السحب", $"تم تحديث حالة طلب السحب إلى {payout.Status}.")
+        };
+        await _notifications.NotifyMerchantUsersSafeAsync(
+            payout.MerchantId, type, title, body, "/merchant/payouts",
+            new { payoutId = payout.Id, status = payout.Status.ToString(), amount = payout.Amount }, ct);
+
         return Map(payout);
     }
 
@@ -846,12 +970,14 @@ public class MerchantAdminService
     private readonly IAppDbContext _db;
     private readonly IApiKeyService _apiKeys;
     private readonly IPasswordHasher _passwordHasher;
+    private readonly NotificationService _notifications;
 
-    public MerchantAdminService(IAppDbContext db, IApiKeyService apiKeys, IPasswordHasher passwordHasher)
+    public MerchantAdminService(IAppDbContext db, IApiKeyService apiKeys, IPasswordHasher passwordHasher, NotificationService notifications)
     {
         _db = db;
         _apiKeys = apiKeys;
         _passwordHasher = passwordHasher;
+        _notifications = notifications;
     }
 
     public async Task<IReadOnlyList<MerchantDto>> ListAsync(CancellationToken ct = default)
@@ -905,6 +1031,7 @@ public class MerchantAdminService
             .FirstOrDefaultAsync(m => m.Id == merchantId, ct)
             ?? throw new InvalidOperationException("التاجر غير موجود");
 
+        var previousStatus = merchant.Status;
         if (!string.IsNullOrWhiteSpace(request.Status) && Enum.TryParse<MerchantStatus>(request.Status, true, out var status))
             merchant.Status = status;
 
@@ -976,6 +1103,20 @@ public class MerchantAdminService
 
         merchant.UpdatedAtUtc = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+
+        if (previousStatus != merchant.Status)
+        {
+            var (type, title, body) = merchant.Status switch
+            {
+                MerchantStatus.Active => (NotificationTypes.MerchantActivated, "تم تفعيل حسابك", "تمت الموافقة على حساب التاجر ويمكنك الآن قبول المدفوعات."),
+                MerchantStatus.Suspended => (NotificationTypes.MerchantSuspended, "تم تعليق حسابك", "تم تعليق حساب التاجر مؤقتاً. تواصل مع الدعم لمزيد من التفاصيل."),
+                MerchantStatus.Rejected => (NotificationTypes.MerchantRejected, "تم رفض طلب التسجيل", "لم تتم الموافقة على حساب التاجر. راجع بياناتك أو تواصل مع الإدارة."),
+                _ => (NotificationTypes.MerchantActivated, "تحديث حالة الحساب", $"تم تحديث حالة حسابك إلى {merchant.Status}.")
+            };
+            await _notifications.NotifyMerchantUsersSafeAsync(
+                merchant.Id, type, title, body, "/merchant",
+                new { merchantId = merchant.Id, status = merchant.Status.ToString() }, ct);
+        }
 
         return new MerchantDto(
             merchant.Id, merchant.BusinessName, merchant.BusinessNameAr, merchant.ContactEmail, merchant.ContactPhone,

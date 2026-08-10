@@ -24,6 +24,7 @@ const routes = [
       { path: 'admin/payments', name: 'admin-payments', component: () => import('../views/admin/Payments.vue'), meta: { admin: true } },
       { path: 'admin/payouts', name: 'admin-payouts', component: () => import('../views/admin/Payouts.vue'), meta: { admin: true } },
       { path: 'admin/providers', name: 'admin-providers', component: () => import('../views/admin/Providers.vue'), meta: { admin: true } },
+      { path: 'admin/ultramsg', name: 'admin-ultramsg', component: () => import('../views/admin/Ultramsg.vue'), meta: { admin: true } },
       { path: 'admin/landing', name: 'admin-landing', component: () => import('../views/admin/Landing.vue'), meta: { admin: true } }
     ]
   }

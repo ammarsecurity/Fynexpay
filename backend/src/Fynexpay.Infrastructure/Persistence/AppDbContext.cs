@@ -19,6 +19,8 @@ public class AppDbContext : DbContext, IAppDbContext
     public DbSet<PaymentEvent> PaymentEvents => Set<PaymentEvent>();
     public DbSet<PayoutRequest> PayoutRequests => Set<PayoutRequest>();
     public DbSet<PlatformSetting> PlatformSettings => Set<PlatformSetting>();
+    public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
+    public DbSet<AppNotification> Notifications => Set<AppNotification>();
 
     public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
         => Database.BeginTransactionAsync(cancellationToken);
@@ -91,6 +93,8 @@ public class AppDbContext : DbContext, IAppDbContext
             e.HasIndex(x => x.MerchantPlatformId);
             e.Property(x => x.QrCode).HasColumnType("longtext");
             e.Property(x => x.ProviderRawResponse).HasColumnType("longtext");
+            e.Property(x => x.CustomerPhone).HasMaxLength(20);
+            e.Property(x => x.CustomerEmail).HasMaxLength(256);
             e.HasOne(x => x.MerchantPlatform).WithMany(p => p.Payments)
                 .HasForeignKey(x => x.MerchantPlatformId)
                 .OnDelete(DeleteBehavior.SetNull);
@@ -111,6 +115,28 @@ public class AppDbContext : DbContext, IAppDbContext
         {
             e.HasIndex(x => x.Key).IsUnique();
             e.Property(x => x.Key).HasMaxLength(100);
+        });
+
+        modelBuilder.Entity<OtpChallenge>(e =>
+        {
+            e.Property(x => x.PhoneE164).HasMaxLength(20);
+            e.Property(x => x.TargetEmail).HasMaxLength(256);
+            e.Property(x => x.CodeHash).HasMaxLength(128);
+            e.Property(x => x.PayloadJson).HasColumnType("longtext");
+            e.HasIndex(x => new { x.Purpose, x.PhoneE164, x.CreatedAtUtc });
+            e.HasIndex(x => x.PaymentId);
+        });
+
+        modelBuilder.Entity<AppNotification>(e =>
+        {
+            e.ToTable("Notifications");
+            e.Property(x => x.Type).HasMaxLength(64);
+            e.Property(x => x.Title).HasMaxLength(200);
+            e.Property(x => x.Body).HasMaxLength(1000);
+            e.Property(x => x.LinkUrl).HasMaxLength(500);
+            e.Property(x => x.PayloadJson).HasColumnType("longtext");
+            e.HasIndex(x => new { x.UserId, x.IsRead, x.CreatedAtUtc });
+            e.HasIndex(x => x.MerchantId);
         });
     }
 }

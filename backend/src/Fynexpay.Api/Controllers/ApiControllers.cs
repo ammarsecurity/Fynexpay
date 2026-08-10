@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Fynexpay.Api.Security;
 using Fynexpay.Application.Abstractions;
+using Fynexpay.Application.Abstractions.Messaging;
 using Fynexpay.Application.Abstractions.Payments;
 using Fynexpay.Application.DTOs;
 using Fynexpay.Application.Security;
@@ -24,6 +25,29 @@ public class AuthController : ControllerBase
     private readonly AuthService _auth;
 
     public AuthController(AuthService auth) => _auth = auth;
+
+    [HttpGet("register/policy")]
+    [AllowAnonymous]
+    public async Task<ActionResult<AuthPolicyDto>> RegisterPolicy(CancellationToken ct)
+        => Ok(await _auth.GetRegisterPolicyAsync(ct));
+
+    [HttpPost("register/send-otp")]
+    [AllowAnonymous]
+    public async Task<ActionResult<OtpSendResultDto>> SendRegisterOtp([FromBody] RegisterMerchantRequest request, CancellationToken ct)
+    {
+        try { return Ok(await _auth.SendRegisterOtpAsync(request, ct)); }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
+    }
+
+    [HttpPost("register/verify-otp")]
+    [AllowAnonymous]
+    public async Task<ActionResult<AuthResponse>> VerifyRegisterOtp([FromBody] VerifyRegisterOtpRequest request, CancellationToken ct)
+    {
+        try { return Ok(await _auth.VerifyRegisterOtpAsync(request, ct)); }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+    }
 
     [HttpPost("register")]
     [AllowAnonymous]
@@ -55,6 +79,7 @@ public class MerchantDashboardController : ControllerBase
     private readonly WalletService _wallets;
     private readonly PayoutService _payouts;
     private readonly PaymentService _payments;
+    private readonly NotificationService _notifications;
     private readonly IAppDbContext _db;
 
     public MerchantDashboardController(
@@ -63,6 +88,7 @@ public class MerchantDashboardController : ControllerBase
         WalletService wallets,
         PayoutService payouts,
         PaymentService payments,
+        NotificationService notifications,
         IAppDbContext db)
     {
         _merchants = merchants;
@@ -70,10 +96,12 @@ public class MerchantDashboardController : ControllerBase
         _wallets = wallets;
         _payouts = payouts;
         _payments = payments;
+        _notifications = notifications;
         _db = db;
     }
 
     private Guid MerchantId => Guid.Parse(User.FindFirstValue("merchant_id")!);
+    private Guid UserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     private async Task EnsureActiveMerchantAsync(CancellationToken ct)
     {
@@ -371,6 +399,24 @@ public class MerchantDashboardController : ControllerBase
         { return BadRequest(new { message = ex.Message }); }
     }
 
+    [HttpGet("notifications")]
+    public async Task<ActionResult<NotificationSummaryDto>> Notifications(CancellationToken ct)
+        => Ok(await _notifications.SummaryAsync(UserId, ct));
+
+    [HttpPost("notifications/{id:guid}/read")]
+    public async Task<IActionResult> MarkNotificationRead(Guid id, CancellationToken ct)
+    {
+        await _notifications.MarkReadAsync(UserId, id, ct);
+        return NoContent();
+    }
+
+    [HttpPost("notifications/read-all")]
+    public async Task<IActionResult> MarkAllNotificationsRead(CancellationToken ct)
+    {
+        await _notifications.MarkAllReadAsync(UserId, ct);
+        return NoContent();
+    }
+
     public record CreateApiKeyBody(string? Name);
 }
 
@@ -387,6 +433,11 @@ public class AdminController : ControllerBase
     private readonly IAppDbContext _db;
     private readonly IProviderSettingsService _providerSettings;
     private readonly LandingContentService _landing;
+    private readonly IUltramsgSettingsService _ultramsgSettings;
+    private readonly IUltramsgClient _ultramsg;
+    private readonly IEmailSender _emailSender;
+    private readonly NotificationService _notifications;
+    private readonly INotificationSettingsService _notificationSettings;
 
     public AdminController(
         MerchantAdminService merchants,
@@ -395,7 +446,12 @@ public class AdminController : ControllerBase
         PaymentService payments,
         IAppDbContext db,
         IProviderSettingsService providerSettings,
-        LandingContentService landing)
+        LandingContentService landing,
+        IUltramsgSettingsService ultramsgSettings,
+        IUltramsgClient ultramsg,
+        IEmailSender emailSender,
+        NotificationService notifications,
+        INotificationSettingsService notificationSettings)
     {
         _merchants = merchants;
         _platforms = platforms;
@@ -404,7 +460,14 @@ public class AdminController : ControllerBase
         _db = db;
         _providerSettings = providerSettings;
         _landing = landing;
+        _ultramsgSettings = ultramsgSettings;
+        _ultramsg = ultramsg;
+        _emailSender = emailSender;
+        _notifications = notifications;
+        _notificationSettings = notificationSettings;
     }
+
+    private Guid AdminUserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     [HttpGet("stats")]
     public async Task<ActionResult<PlatformStatsDto>> Stats(CancellationToken ct) => Ok(await _merchants.GetStatsAsync(ct));
@@ -415,6 +478,13 @@ public class AdminController : ControllerBase
         [FromQuery] string? q,
         CancellationToken ct)
         => Ok(await _platforms.ListAdminAsync(status, q, ct));
+
+    [HttpGet("platforms/{id:guid}")]
+    public async Task<ActionResult<MerchantPlatformDetailDto>> PlatformDetail(Guid id, CancellationToken ct)
+    {
+        try { return Ok(await _platforms.GetAdminDetailAsync(id, ct)); }
+        catch (InvalidOperationException ex) { return NotFound(new { message = ex.Message }); }
+    }
 
     [HttpPatch("platforms/{id:guid}")]
     public async Task<ActionResult<MerchantPlatformDto>> ReviewPlatform(
@@ -615,6 +685,125 @@ public class AdminController : ControllerBase
     public async Task<ActionResult<LandingContentDto>> ResetLanding(CancellationToken ct)
         => Ok(await _landing.ResetAsync(ct));
 
+    [HttpGet("ultramsg")]
+    public async Task<ActionResult<UltramsgSettings>> GetUltramsg(CancellationToken ct)
+    {
+        var s = await _ultramsgSettings.GetAsync(ct);
+        return Ok(_ultramsgSettings.MaskSecrets(s));
+    }
+
+    [HttpPut("ultramsg")]
+    public async Task<ActionResult<UltramsgSettings>> SaveUltramsg([FromBody] UltramsgSettings request, CancellationToken ct)
+    {
+        try { return Ok(await _ultramsgSettings.SaveAsync(request, ct)); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        { return BadRequest(new { message = ex.Message }); }
+    }
+
+    [HttpGet("ultramsg/status")]
+    public async Task<ActionResult<UltramsgStatusResult>> UltramsgStatus(CancellationToken ct)
+        => Ok(await _ultramsg.GetStatusAsync(ct));
+
+    [HttpGet("ultramsg/qr")]
+    public async Task<IActionResult> UltramsgQr(CancellationToken ct)
+    {
+        try
+        {
+            var bytes = await _ultramsg.GetQrImageAsync(ct);
+            if (bytes == null || bytes.Length == 0)
+                return BadRequest(new { message = "لا توجد صورة QR" });
+            return File(bytes, "image/png");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    public record UltramsgTestMessageRequest(string Phone, string? Message);
+    public record EmailTestRequest(string? To);
+
+    [HttpPost("ultramsg/test")]
+    public async Task<IActionResult> UltramsgTest([FromBody] UltramsgTestMessageRequest request, CancellationToken ct)
+    {
+        try
+        {
+            var settings = await _ultramsgSettings.GetAsync(ct);
+            if (string.IsNullOrWhiteSpace(request.Phone))
+                return BadRequest(new { message = "رقم الهاتف مطلوب" });
+            var phone = request.Phone.Trim();
+            if (!phone.StartsWith('+'))
+            {
+                var digits = new string(phone.Where(char.IsDigit).ToArray());
+                if (digits.StartsWith('0'))
+                    digits = settings.DefaultCountryCode + digits[1..];
+                phone = "+" + digits;
+            }
+            var body = string.IsNullOrWhiteSpace(request.Message)
+                ? "اختبار اتصال Fynexpay عبر Ultramsg ✓"
+                : request.Message.Trim();
+            await _ultramsg.SendChatAsync(phone, body, ct);
+            return Ok(new { message = "تم إرسال رسالة الاختبار", to = phone });
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPost("ultramsg/test-email")]
+    public async Task<IActionResult> UltramsgTestEmail([FromBody] EmailTestRequest request, CancellationToken ct)
+    {
+        try
+        {
+            var settings = await _ultramsgSettings.GetAsync(ct);
+            var to = string.IsNullOrWhiteSpace(request.To) ? settings.FromEmail : request.To.Trim();
+            if (string.IsNullOrWhiteSpace(to) || !to.Contains('@'))
+                return BadRequest(new { message = "بريد الاختبار غير صالح" });
+
+            await _emailSender.SendAsync(
+                to,
+                "اختبار بريد Fynexpay",
+                "<div style=\"font-family:Tahoma,Arial,sans-serif;direction:rtl\"><h3>نجح اتصال SMTP</h3><p>هذه رسالة اختبار من إعدادات التحقق في Fynexpay.</p></div>",
+                ct);
+            return Ok(new { message = "تم إرسال بريد الاختبار", to });
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.Net.Mail.SmtpException)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpGet("notifications")]
+    public async Task<ActionResult<NotificationSummaryDto>> Notifications(CancellationToken ct)
+        => Ok(await _notifications.SummaryAsync(AdminUserId, ct));
+
+    [HttpPost("notifications/{id:guid}/read")]
+    public async Task<IActionResult> MarkNotificationRead(Guid id, CancellationToken ct)
+    {
+        await _notifications.MarkReadAsync(AdminUserId, id, ct);
+        return NoContent();
+    }
+
+    [HttpPost("notifications/read-all")]
+    public async Task<IActionResult> MarkAllNotificationsRead(CancellationToken ct)
+    {
+        await _notifications.MarkAllReadAsync(AdminUserId, ct);
+        return NoContent();
+    }
+
+    [HttpGet("notification-settings")]
+    public async Task<ActionResult<NotificationSettings>> GetNotificationSettings(CancellationToken ct)
+        => Ok(await _notificationSettings.GetAsync(ct));
+
+    [HttpPut("notification-settings")]
+    public async Task<ActionResult<NotificationSettings>> SaveNotificationSettings([FromBody] NotificationSettings request, CancellationToken ct)
+    {
+        try { return Ok(await _notificationSettings.SaveAsync(request, ct)); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        { return BadRequest(new { message = ex.Message }); }
+    }
+
     [HttpPost("providers/{key}/logo")]
     [RequestSizeLimit(2_000_000)]
     public async Task<ActionResult<ProviderRuntimeSettings>> UploadProviderLogo(string key, IFormFile file, CancellationToken ct)
@@ -751,7 +940,8 @@ public class MerchantPublicApiController : ControllerBase
             request.SuccessUrl,
             request.FailureUrl,
             request.CallbackUrl,
-            null);
+            null,
+            request.CustomerPhone);
         try { return Ok(await _payments.CreateAsync(MerchantId, mapped, idem, ct, platformId)); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         { return BadRequest(new { message = ex.Message }); }

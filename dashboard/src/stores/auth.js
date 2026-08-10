@@ -22,6 +22,11 @@ export const useAuthStore = defineStore('auth', {
       this.applyAuth(data)
       return data
     },
+    async verifyRegisterOtp(challengeId, code) {
+      const { data } = await api.post('/api/auth/register/verify-otp', { challengeId, code })
+      this.applyAuth(data)
+      return data
+    },
     applyAuth(data) {
       this.token = data.token
       this.user = {

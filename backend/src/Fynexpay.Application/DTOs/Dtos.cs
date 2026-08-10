@@ -11,6 +11,12 @@ public record RegisterMerchantRequest(
     string? ContactPhone,
     string? WebsiteUrl);
 
+public record VerifyRegisterOtpRequest(Guid ChallengeId, string Code);
+
+public record OtpSendResultDto(Guid ChallengeId, string MaskedPhone, int ExpiresInSeconds, string? DevCode, string? Via = null);
+
+public record AuthPolicyDto(bool RequireWhatsAppOtp, bool WhatsAppEnabled, bool EmailEnabled = false, string Channel = "WhatsApp");
+
 public record LoginRequest(string Email, string Password);
 
 public record AuthResponse(
@@ -32,7 +38,8 @@ public record CreatePaymentRequest(
     string? SuccessUrl,
     string? FailureUrl,
     string? CallbackUrl,
-    Guid? MerchantPlatformId = null);
+    Guid? MerchantPlatformId = null,
+    string? CustomerPhone = null);
 
 /// <summary>
 /// Public /v1 create-payment body. Platform is inferred from X-Api-Key (not sent in JSON).
@@ -44,7 +51,8 @@ public record CreatePublicPaymentRequest(
     string? ServiceType,
     string? SuccessUrl,
     string? FailureUrl,
-    string? CallbackUrl);
+    string? CallbackUrl,
+    string? CustomerPhone = null);
 
 public record InitiatePaymentRequest(string Provider);
 
@@ -170,6 +178,31 @@ public record MerchantPlatformDto(
     bool HasOneTimeApiKey,
     string? OneTimeApiKey = null);
 
+public record MerchantPlatformDetailDto(
+    Guid Id,
+    Guid MerchantId,
+    string? MerchantName,
+    string? MerchantEmail,
+    string? MerchantPhone,
+    string? MerchantStatus,
+    string Name,
+    string Domain,
+    string? LogoUrl,
+    string Status,
+    string? AdminNotes,
+    DateTime CreatedAtUtc,
+    DateTime? UpdatedAtUtc,
+    DateTime? ReviewedAtUtc,
+    Guid? ReviewedByUserId,
+    string? ReviewedByName,
+    Guid? ApiKeyId,
+    string? ApiKeyPrefix,
+    bool ApiKeyIsActive,
+    DateTime? ApiKeyCreatedAtUtc,
+    bool HasOneTimeApiKey,
+    int PaymentsCount,
+    decimal PaymentsVolume);
+
 public record MerchantDto(
     Guid Id,
     string BusinessName,
@@ -248,6 +281,18 @@ public record ProviderConfigDto(
     bool HasCredentials);
 
 public record PagedResult<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
+
+public record NotificationDto(
+    Guid Id,
+    string Type,
+    string Title,
+    string Body,
+    string? LinkUrl,
+    bool IsRead,
+    DateTime CreatedAtUtc,
+    Guid? MerchantId);
+
+public record NotificationSummaryDto(int UnreadCount, IReadOnlyList<NotificationDto> Items);
 
 public record ProviderCatalogItemDto(
     string Key,

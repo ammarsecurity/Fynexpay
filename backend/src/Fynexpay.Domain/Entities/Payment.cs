@@ -33,6 +33,10 @@ public class Payment : BaseEntity
     public DateTime? ExpiredAtUtc { get; set; }
     public string? FailureReason { get; set; }
     public string? ProviderRawResponse { get; set; }
+    /// <summary>رقم واتساب الزبون بصيغة E.164 بعد التطبيع.</summary>
+    public string? CustomerPhone { get; set; }
+    public string? CustomerEmail { get; set; }
+    public DateTime? CustomerPhoneVerifiedAtUtc { get; set; }
 
     public ICollection<PaymentEvent> Events { get; set; } = new List<PaymentEvent>();
 }

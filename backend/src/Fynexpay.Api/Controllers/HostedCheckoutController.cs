@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using Fynexpay.Application.Abstractions;
+using Fynexpay.Application.Abstractions.Messaging;
 using Fynexpay.Application.Abstractions.Payments;
 using Fynexpay.Application.Security;
 using Fynexpay.Application.Services;
@@ -20,12 +21,21 @@ public class HostedCheckoutController : ControllerBase
     private readonly IAppDbContext _db;
     private readonly PaymentService _payments;
     private readonly IProviderSettingsService _providerSettings;
+    private readonly OtpService _otp;
+    private readonly IUltramsgSettingsService _ultramsgSettings;
 
-    public HostedCheckoutController(IAppDbContext db, PaymentService payments, IProviderSettingsService providerSettings)
+    public HostedCheckoutController(
+        IAppDbContext db,
+        PaymentService payments,
+        IProviderSettingsService providerSettings,
+        OtpService otp,
+        IUltramsgSettingsService ultramsgSettings)
     {
         _db = db;
         _payments = payments;
         _providerSettings = providerSettings;
+        _otp = otp;
+        _ultramsgSettings = ultramsgSettings;
     }
 
     [HttpGet("/checkout/{paymentId:guid}")]
@@ -57,6 +67,16 @@ public class HostedCheckoutController : ControllerBase
                 </div>
                 """;
             return Content(Render(T(lang, "متابعة الدفع", "Continue payment"), Shell(payment, cont, false, lang), "Pending", lang), "text/html; charset=utf-8");
+        }
+
+        var wa = await _ultramsgSettings.GetAsync(ct);
+        var needsVerify = wa.Enabled && wa.RequireCheckoutOtp && (wa.UsesWhatsApp() || wa.UsesEmail())
+                          && payment.CustomerPhoneVerifiedAtUtc == null;
+        if (needsVerify)
+        {
+            var phoneError = Request.Query["error"].FirstOrDefault();
+            var phoneUi = VerifyUi(payment, lang, phoneError, wa);
+            return Content(Render(T(lang, "تأكيد الهوية", "Verify identity"), Shell(payment, phoneUi, false, lang), "Verify", lang), "text/html; charset=utf-8");
         }
 
         IReadOnlyList<PaymentProviderType> providers;
@@ -156,12 +176,50 @@ public class HostedCheckoutController : ControllerBase
         return Content(Render(title, Shell(payment, html, false, lang), success ? "Paid" : payment.Status.ToString(), lang), "text/html; charset=utf-8");
     }
 
+    [HttpPost("/checkout/{paymentId:guid}/otp/send")]
+    public async Task<IActionResult> SendOtp(Guid paymentId, [FromForm] string? phone, [FromForm] string? email, CancellationToken ct)
+    {
+        var lang = ResolveLang();
+        try
+        {
+            var result = await _otp.SendCheckoutOtpAsync(paymentId, phone, email, ct);
+            var q = $"lang={lang}&step=code&cid={result.ChallengeId}&mask={Uri.EscapeDataString(result.MaskedDestination)}&via={Uri.EscapeDataString(result.Via)}";
+            if (!string.IsNullOrWhiteSpace(result.DevCode))
+                q += $"&dev={Uri.EscapeDataString(result.DevCode)}";
+            return Redirect($"/checkout/{paymentId}?{q}");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            return Redirect($"/checkout/{paymentId}?lang={lang}&error={Uri.EscapeDataString(ex.Message)}");
+        }
+    }
+
+    [HttpPost("/checkout/{paymentId:guid}/otp/verify")]
+    public async Task<IActionResult> VerifyOtp(Guid paymentId, [FromForm] Guid challengeId, [FromForm] string code, CancellationToken ct)
+    {
+        var lang = ResolveLang();
+        try
+        {
+            await _otp.VerifyCheckoutOtpAsync(paymentId, challengeId, code, ct);
+            return Redirect($"/checkout/{paymentId}?lang={lang}");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            return Redirect($"/checkout/{paymentId}?lang={lang}&step=code&cid={challengeId}&error={Uri.EscapeDataString(ex.Message)}");
+        }
+    }
+
     [HttpPost("/checkout/{paymentId:guid}/pay")]
     public async Task<IActionResult> Pay(Guid paymentId, [FromForm] string provider, CancellationToken ct)
     {
         var lang = ResolveLang();
         try
         {
+            var wa = await _ultramsgSettings.GetAsync(ct);
+            if (wa.Enabled && wa.RequireCheckoutOtp && (wa.UsesWhatsApp() || wa.UsesEmail())
+                && !await _otp.IsCheckoutVerifiedAsync(paymentId, ct))
+                return Redirect($"/checkout/{paymentId}?lang={lang}&error={Uri.EscapeDataString(T(lang, "يجب إكمال التحقق أولاً", "Verification is required first"))}");
+
             var result = await _payments.InitiateAsync(paymentId, provider, ct);
             if (!string.IsNullOrWhiteSpace(result.ProviderCheckoutUrl))
                 return Redirect(result.ProviderCheckoutUrl);
@@ -172,6 +230,118 @@ public class HostedCheckoutController : ControllerBase
         {
             return Redirect($"/checkout/{paymentId}?lang={lang}&error={Uri.EscapeDataString(ex.Message)}");
         }
+    }
+
+    private string VerifyUi(Domain.Entities.Payment payment, string lang, string? error, UltramsgSettings settings)
+    {
+        var step = Request.Query["step"].FirstOrDefault();
+        var cid = Request.Query["cid"].FirstOrDefault();
+        var mask = Request.Query["mask"].FirstOrDefault();
+        var via = Request.Query["via"].FirstOrDefault();
+        var dev = Request.Query["dev"].FirstOrDefault();
+        var errHtml = string.IsNullOrWhiteSpace(error) ? "" : $"<div class=\"error\">{H(error)}</div>";
+        var prefPhone = payment.CustomerPhone ?? "";
+        var prefEmail = payment.CustomerEmail ?? "";
+        var useWa = settings.UsesWhatsApp();
+        var useEmail = settings.UsesEmail();
+
+        if (string.Equals(step, "code", StringComparison.OrdinalIgnoreCase) && Guid.TryParse(cid, out _))
+        {
+            var viaLabel = string.IsNullOrWhiteSpace(via) ? "" : $" ({H(via)})";
+            var devHint = string.IsNullOrWhiteSpace(dev)
+                ? ""
+                : $"<p class=\"dev-hint\">DEV code: <strong class=\"ltr\">{H(dev)}</strong></p>";
+            var codeIcon = useWa && !useEmail
+                ? """<i class="bi bi-whatsapp" aria-hidden="true"></i>"""
+                : useEmail && !useWa
+                    ? """<i class="bi bi-envelope-fill" aria-hidden="true"></i>"""
+                    : """<i class="bi bi-shield-lock-fill" aria-hidden="true"></i>""";
+            var codeIconTone = useWa && !useEmail ? "wa" : useEmail && !useWa ? "mail" : "secure";
+            return $"""
+                <div class="verify-box">
+                  <div class="verify-icon {codeIconTone}" aria-hidden="true">{codeIcon}</div>
+                  <h2>{T(lang, "أدخل رمز التحقق", "Enter verification code")}</h2>
+                  <p class="muted">{T(lang, "أرسلنا رمزاً إلى", "We sent a code to")} <strong class="ltr">{H(mask)}</strong>{viaLabel}</p>
+                  {errHtml}
+                  {devHint}
+                  <form method="post" action="/checkout/{payment.Id}/otp/verify?lang={lang}" class="verify-form">
+                    <input type="hidden" name="challengeId" value="{H(cid)}" />
+                    <label class="field-label">{T(lang, "رمز التحقق", "Verification code")}</label>
+                    <input class="otp-input ltr" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" required />
+                    <button class="btn btn-send" type="submit">
+                      <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                      <span>{T(lang, "تأكيد والمتابعة", "Confirm & continue")}</span>
+                    </button>
+                  </form>
+                  <form method="post" action="/checkout/{payment.Id}/otp/send?lang={lang}" class="resend-form">
+                    <input type="hidden" name="phone" value="{H(prefPhone)}" />
+                    <input type="hidden" name="email" value="{H(prefEmail)}" />
+                    <button class="link-btn" type="submit">
+                      <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                      {T(lang, "إعادة إرسال الرمز", "Resend code")}
+                    </button>
+                  </form>
+                </div>
+                """;
+        }
+
+        var phoneField = !useWa ? "" : $"""
+            <label class="field-label"><i class="bi bi-whatsapp" aria-hidden="true"></i> {T(lang, "رقم الواتساب", "WhatsApp number")}</label>
+            <div class="input-wrap">
+              <i class="bi bi-phone input-ico" aria-hidden="true"></i>
+              <input class="phone-input has-ico ltr" name="phone" type="tel" value="{H(prefPhone)}" placeholder="07xxxxxxxxx" {(useEmail ? "" : "required")} />
+            </div>
+            <p class="hint">{T(lang, "يمكن إدخال الرقم المحلي أو بالصيغة الدولية +964…", "Use a local number or international format +964…")}</p>
+            """;
+        var emailField = !useEmail ? "" : $"""
+            <label class="field-label"><i class="bi bi-envelope" aria-hidden="true"></i> {T(lang, "البريد الإلكتروني", "Email")}</label>
+            <div class="input-wrap">
+              <i class="bi bi-at input-ico" aria-hidden="true"></i>
+              <input class="phone-input has-ico ltr" name="email" type="email" value="{H(prefEmail)}" placeholder="name@email.com" {(useWa ? "" : "required")} />
+            </div>
+            """;
+
+        var (title, hint, btnLabel, btnIcon, iconClass, iconTone) = (useWa, useEmail) switch
+        {
+            (true, true) => (
+                T(lang, "تأكيد قبل الدفع", "Verify before payment"),
+                T(lang, "سنرسل الرمز عبر واتساب والبريد معاً لحماية العملية.", "We will send the code via WhatsApp and email to protect this payment."),
+                T(lang, "إرسال رمز التحقق", "Send verification code"),
+                """<i class="bi bi-send-fill" aria-hidden="true"></i>""",
+                """<i class="bi bi-shield-lock-fill" aria-hidden="true"></i>""",
+                "secure"),
+            (false, true) => (
+                T(lang, "تأكيد البريد الإلكتروني", "Verify email"),
+                T(lang, "سنرسل رمزاً لمرة واحدة إلى بريدك قبل اختيار طريقة الدفع.", "We will send a one-time code to your email before choosing a payment method."),
+                T(lang, "إرسال رمز البريد", "Send email code"),
+                """<i class="bi bi-envelope-fill" aria-hidden="true"></i>""",
+                """<i class="bi bi-envelope-fill" aria-hidden="true"></i>""",
+                "mail"),
+            _ => (
+                T(lang, "تأكيد رقم الواتساب", "Verify WhatsApp number"),
+                T(lang, "لحماية عملية الدفع، نرسل رمزاً لمرة واحدة عبر واتساب قبل اختيار طريقة الدفع.", "To protect this payment, we send a one-time WhatsApp code before you choose a method."),
+                T(lang, "إرسال رمز واتساب", "Send WhatsApp code"),
+                """<i class="bi bi-whatsapp" aria-hidden="true"></i>""",
+                """<i class="bi bi-whatsapp" aria-hidden="true"></i>""",
+                "wa")
+        };
+
+        return $"""
+            <div class="verify-box">
+              <div class="verify-icon {iconTone}" aria-hidden="true">{iconClass}</div>
+              <h2>{title}</h2>
+              <p class="muted">{hint}</p>
+              {errHtml}
+              <form method="post" action="/checkout/{payment.Id}/otp/send?lang={lang}" class="verify-form">
+                {phoneField}
+                {emailField}
+                <button class="btn btn-send" type="submit">
+                  {btnIcon}
+                  <span>{btnLabel}</span>
+                </button>
+              </form>
+            </div>
+            """;
     }
 
     private string ResolveLang()
@@ -464,6 +634,7 @@ public class HostedCheckoutController : ControllerBase
               <link rel="icon" type="image/png" href="/icon-logo.png" />
               <link rel="preconnect" href="https://fonts.googleapis.com" />
               <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet" />
+              <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
               <style>
                 :root{
                   --ink:#031838; --muted:#5b6b86; --line:#e2e8f2;
@@ -600,10 +771,22 @@ public class HostedCheckoutController : ControllerBase
                 .p-go i{font-style:normal;font-family:"Plus Jakarta Sans",sans-serif}
                 html[dir="ltr"] .p-go i{display:inline-block;transform:scaleX(-1)}
                 .btn{
-                  display:inline-flex;align-items:center;justify-content:center;margin-top:14px;
-                  background:var(--brand);color:#fff;text-decoration:none;border-radius:14px;
-                  padding:12px 20px;font-weight:800;box-shadow:0 12px 28px rgba(108,60,236,.28);
+                  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+                  margin-top:14px;border:0;cursor:pointer;
+                  background:var(--brand);color:#fff;text-decoration:none;
+                  border-radius:12px;padding:12px 18px;min-height:48px;
+                  font:inherit;font-weight:700;font-size:.95rem;letter-spacing:0;
+                  box-shadow:0 8px 20px rgba(108,60,236,.28);
+                  transition:.15s ease;
                 }
+                .btn:hover{background:#5a2fd4}
+                .btn-send{
+                  width:100%;margin-top:8px;
+                  border-radius:12px;min-height:48px;
+                  font-family:inherit;font-weight:700;font-size:15px;
+                  box-shadow:0 8px 18px rgba(108,60,236,.22);
+                }
+                .btn-send i{font-size:1.15rem;line-height:1}
                 .btn.ghost{background:transparent;color:var(--bad);border:1px solid #efc4c0;box-shadow:none}
                 .state{text-align:center;padding:8px 0}
                 .state h1,.state h2{margin:0 0 8px;font-size:1.25rem}
@@ -617,6 +800,47 @@ public class HostedCheckoutController : ControllerBase
                 .state.bad .icon{background:rgba(240,68,56,.1);color:var(--bad)}
                 .error{background:#fff1f0;color:var(--bad);border:1px solid #f0c9c5;border-radius:12px;padding:10px 12px;margin-bottom:12px;font-weight:700}
                 .redirect-note{margin-top:12px!important}
+                .verify-box{text-align:center;padding:4px 0 8px}
+                .verify-box h2{margin:0 0 8px;font-size:1.2rem;font-weight:800;color:var(--navy)}
+                .verify-box .muted{margin:0 auto 16px;max-width:38ch;line-height:1.7;font-weight:600;font-size:.92rem}
+                .verify-icon{
+                  width:64px;height:64px;border-radius:18px;margin:0 auto 14px;
+                  display:grid;place-items:center;font-size:1.75rem;line-height:1;
+                }
+                .verify-icon.wa{background:rgba(37,211,102,.12);color:#25D366;border:1px solid rgba(37,211,102,.22)}
+                .verify-icon.mail{background:rgba(108,60,236,.1);color:var(--brand);border:1px solid rgba(108,60,236,.18)}
+                .verify-icon.secure{background:var(--brand-soft);color:var(--brand);border:1px solid rgba(108,60,236,.18)}
+                .verify-form{display:grid;gap:8px;text-align:start;max-width:360px;margin:0 auto}
+                .field-label{
+                  display:inline-flex;align-items:center;gap:6px;
+                  font-weight:700;font-size:.9rem;color:var(--navy);margin-top:4px;
+                }
+                .field-label i{color:#25D366;font-size:1rem}
+                .field-label .bi-envelope{color:var(--brand)}
+                .input-wrap{position:relative}
+                .input-ico{
+                  position:absolute;top:50%;inset-inline-start:14px;transform:translateY(-50%);
+                  color:#94a3b8;font-size:1.05rem;pointer-events:none;
+                }
+                .phone-input,.otp-input{
+                  width:100%;border:1px solid var(--line);border-radius:12px;padding:12px 14px;
+                  font:inherit;font-weight:600;font-size:15px;background:#fff;color:var(--ink);
+                  min-height:48px;
+                }
+                .phone-input.has-ico{padding-inline-start:42px}
+                .otp-input{text-align:center;letter-spacing:.35em;font-size:1.35rem;font-weight:800}
+                .phone-input:focus,.otp-input:focus{
+                  outline:0;border-color:rgba(108,60,236,.55);
+                  box-shadow:0 0 0 4px rgba(108,60,236,.14);
+                }
+                .hint{margin:0 0 6px;color:var(--muted);font-size:13px;font-weight:600}
+                .resend-form{margin-top:14px}
+                .link-btn{
+                  border:0;background:transparent;color:var(--brand);font:inherit;font-weight:700;
+                  cursor:pointer;display:inline-flex;align-items:center;gap:6px;
+                }
+                .link-btn:hover{text-decoration:underline}
+                .dev-hint{background:#fef9c3;border:1px solid #fde68a;border-radius:12px;padding:8px 10px;font-size:.85rem;margin-bottom:10px}
                 .foot{
                   margin-top:18px;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px 14px;
                   color:var(--muted);font-size:.85rem;font-weight:700;

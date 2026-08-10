@@ -66,6 +66,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>
           {{ $t('nav.providers') }}
         </RouterLink>
+        <RouterLink to="/admin/ultramsg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"/><path d="M8.2 15.4c1.6 1.5 3.6 2.1 5.6 1.7l1.5.8-.4-1.6A6.4 6.4 0 0 0 17 11.2c0-3-2.5-5.4-5.5-5.4S6 8.2 6 11.2c0 1.5.6 2.9 1.7 3.9l.5.3Z"/></svg>
+          {{ $t('nav.ultramsg') }}
+        </RouterLink>
         <RouterLink to="/admin/landing">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/></svg>
           {{ $t('nav.landing') }}
@@ -110,10 +114,7 @@
         </div>
         <div class="top-actions">
           <LangSwitch />
-          <button class="icon-btn" type="button" :title="$t('common.notifications')">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 9a6 6 0 1 1 12 0c0 7 3 7 3 9H3c0-2 3-2 3-9Z"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
-            <span class="ping">3</span>
-          </button>
+          <NotificationBell />
           <RouterLink v-if="auth.isMerchant" class="btn" to="/merchant/test">{{ $t('nav.newPayment') }}</RouterLink>
           <RouterLink v-else class="btn" to="/admin/merchants">{{ $t('nav.manageMerchants') }}</RouterLink>
         </div>
@@ -130,6 +131,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import LangSwitch from '../components/LangSwitch.vue'
+import NotificationBell from '../components/NotificationBell.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
