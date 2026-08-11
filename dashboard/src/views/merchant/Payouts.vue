@@ -6,8 +6,8 @@
       <div class="field"><label>{{ $t('payouts.method') }}</label>
         <select v-model="destinationType">
           <option>BankTransfer</option>
-          <option>FibWallet</option>
-          <option>ZainCash</option>
+          <option>Wallet</option>
+          <option>Other</option>
         </select>
       </div>
       <div class="field"><label>{{ $t('payouts.accountDetails') }}</label><textarea v-model="destinationDetails" rows="3" /></div>

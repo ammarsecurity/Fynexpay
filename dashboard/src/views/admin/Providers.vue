@@ -68,9 +68,16 @@
               <tr :class="{ expanded: editingKey === item.key }">
                 <td>
                   <div class="prov-cell">
-                    <img class="prov-logo" :src="logoSrc(item.key)" :alt="item.title" width="36" height="36" />
-                    <div>
-                      <strong>{{ item.title }}</strong>
+                    <img class="prov-logo" :src="logoSrc(item.key)" :alt="displayTitle(item)" width="36" height="36" />
+                    <div class="prov-meta">
+                      <input
+                        class="name-input"
+                        type="text"
+                        maxlength="64"
+                        v-model="settings[item.key].displayName"
+                        :placeholder="item.title"
+                        :aria-label="$t('providers.displayName')"
+                      />
                       <span class="muted mono">{{ item.key }}</span>
                     </div>
                   </div>
@@ -189,7 +196,8 @@ const editEnv = reactive({
   fib: 'Test',
   zainCash: 'Test',
   qi: 'Test',
-  superQi: 'Test'
+  superQi: 'Test',
+  alqaseh: 'Test'
 })
 
 const providerCards = [
@@ -239,6 +247,18 @@ const providerCards = [
       { key: 'password', label: 'Password', secret: true },
       { key: 'terminalId', label: 'Terminal ID' }
     ]
+  },
+  {
+    key: 'alqaseh',
+    title: 'Alqaseh',
+    required: ['baseUrl', 'authUrl', 'clientId', 'clientSecret'],
+    fields: [
+      { key: 'baseUrl', label: 'API Base URL' },
+      { key: 'authUrl', label: 'Pay Page Base URL' },
+      { key: 'clientId', label: 'Client ID' },
+      { key: 'clientSecret', label: 'Client Secret', secret: true },
+      { key: 'webhookSecret', label: 'Webhook Secret (optional)', secret: true }
+    ]
   }
 ]
 
@@ -261,6 +281,20 @@ function logoSrc(key) {
   return defaultLogoPath(key === 'zainCash' ? 'zaincash' : key === 'superQi' ? 'superqi' : key)
 }
 
+function displayTitle(item) {
+  return settings.value?.[item.key]?.displayName?.trim() || item.title
+}
+
+function ensureDisplayNames(data) {
+  for (const item of providerCards) {
+    if (!data[item.key]) continue
+    if (!String(data[item.key].displayName || '').trim()) {
+      data[item.key].displayName = item.title
+    }
+  }
+  return data
+}
+
 function toggleEdit(key) {
   editingKey.value = editingKey.value === key ? '' : key
 }
@@ -268,12 +302,13 @@ function toggleEdit(key) {
 async function load() {
   error.value = ''
   const { data } = await api.get('/api/admin/providers')
-  settings.value = data
+  settings.value = ensureDisplayNames(data)
   const env = data.activeEnvironment === 'Production' ? 'Production' : 'Test'
   editEnv.fib = env
   editEnv.zainCash = env
   editEnv.qi = env
   editEnv.superQi = env
+  editEnv.alqaseh = env
 }
 
 async function save() {
@@ -282,7 +317,7 @@ async function save() {
   error.value = ''
   try {
     const { data } = await api.put('/api/admin/providers', settings.value)
-    settings.value = data
+    settings.value = ensureDisplayNames(data)
     message.value = t('providers.saved')
     await refresh()
   } catch (e) {
@@ -299,11 +334,12 @@ async function switchEnv(environment) {
   try {
     await api.put('/api/admin/providers', settings.value)
     const { data } = await api.post('/api/admin/providers/environment', { environment })
-    settings.value = data
+    settings.value = ensureDisplayNames(data)
     editEnv.fib = environment
     editEnv.zainCash = environment
     editEnv.qi = environment
     editEnv.superQi = environment
+    editEnv.alqaseh = environment
     message.value = t('providers.switched', { env: environment })
   } catch (e) {
     error.value = e.response?.data?.message || t('providers.switchFail')
@@ -318,11 +354,12 @@ async function loadDemo() {
   error.value = ''
   try {
     const { data } = await api.post('/api/admin/providers/load-demo')
-    settings.value = data
+    settings.value = ensureDisplayNames(data)
     editEnv.fib = 'Test'
     editEnv.zainCash = 'Test'
     editEnv.qi = 'Test'
     editEnv.superQi = 'Test'
+    editEnv.alqaseh = 'Test'
     message.value = t('providers.demoLoaded')
     await refresh()
   } catch (e) {
@@ -343,7 +380,7 @@ async function onLogo(event, key) {
     const form = new FormData()
     form.append('file', file)
     const { data } = await api.post(`/api/admin/providers/${key}/logo`, form)
-    settings.value = data
+    settings.value = ensureDisplayNames(data)
     message.value = t('providers.logoUploaded')
     await refresh()
   } catch (e) {
@@ -359,7 +396,7 @@ async function removeLogo(key) {
   error.value = ''
   try {
     const { data } = await api.delete(`/api/admin/providers/${key}/logo`)
-    settings.value = data
+    settings.value = ensureDisplayNames(data)
     await refresh()
   } catch (e) {
     error.value = e.response?.data?.message || t('providers.logoFail')
@@ -444,6 +481,29 @@ onMounted(load)
   color: var(--brand);
   font-size: 0.92rem;
 }
+.prov-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 140px;
+}
+.name-input {
+  width: 100%;
+  min-width: 140px;
+  max-width: 220px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: var(--brand);
+  background: #fff;
+}
+.name-input:focus {
+  outline: none;
+  border-color: var(--brand-secondary);
+  box-shadow: 0 0 0 3px rgba(3, 24, 56, 0.12);
+}
 .prov-cell .muted {
   display: block;
   font-size: 0.75rem;
@@ -482,7 +542,7 @@ onMounted(load)
 }
 .btn.sm.disabled { opacity: 0.6; pointer-events: none; }
 
-tr.expanded td { background: rgba(108, 60, 236, 0.03); }
+tr.expanded td { background: rgba(3, 24, 56, 0.03); }
 .edit-row td {
   background: #f8fafc;
   padding: 0 !important;

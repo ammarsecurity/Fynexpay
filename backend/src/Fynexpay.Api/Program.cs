@@ -1,5 +1,6 @@
 using System.Threading.RateLimiting;
 using Fynexpay.Application;
+using Fynexpay.Api.Background;
 using Fynexpay.Api.Cors;
 using Fynexpay.Api.Middleware;
 using Fynexpay.Api.Swagger;
@@ -13,6 +14,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddControllers();
+builder.Services.AddHostedService<ExpiredCheckoutPurgeService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSingleton<ICorsPolicyProvider, DynamicCorsPolicyProvider>();
 builder.Services.AddRateLimiter(options =>

@@ -16,10 +16,11 @@ public class PasswordHasher : IPasswordHasher
 
 public class ApiKeyService : IApiKeyService
 {
-    public (string PlainKey, string Prefix, string Hash) Generate()
+    public (string PlainKey, string Prefix, string Hash) Generate(bool isTest = false)
     {
-        var plain = "fx_" + Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
-        var prefix = plain[..10];
+        var head = isTest ? "fx_test_" : "fx_live_";
+        var plain = head + Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
+        var prefix = plain[..Math.Min(12, plain.Length)];
         return (plain, prefix, Hash(plain));
     }
 

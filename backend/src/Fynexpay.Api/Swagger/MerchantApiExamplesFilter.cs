@@ -36,12 +36,11 @@ public sealed class MerchantApiExamplesFilter : ISchemaFilter, IOperationFilter
                 ["destinationDetails"] = new OpenApiString("IBAN / account details")
             };
         }
-        else if (context.Type == typeof(PaymentDto))
+        else if (context.Type == typeof(PublicPaymentDto))
         {
             schema.Example = new OpenApiObject
             {
                 ["id"] = new OpenApiString("5bac8b83-0000-0000-0000-000000000001"),
-                ["merchantPlatformId"] = new OpenApiString("96590372-0000-0000-0000-000000000001"),
                 ["orderId"] = new OpenApiString("ORD-1001"),
                 ["amount"] = new OpenApiInteger(5000),
                 ["currency"] = new OpenApiString("IQD"),
@@ -49,15 +48,10 @@ public sealed class MerchantApiExamplesFilter : ISchemaFilter, IOperationFilter
                 ["provider"] = new OpenApiString("PendingSelection"),
                 ["description"] = new OpenApiString("Monthly subscription"),
                 ["checkoutUrl"] = new OpenApiString("http://localhost:5080/checkout/5bac8b83-0000-0000-0000-000000000001"),
-                ["platformFee"] = new OpenApiInteger(125),
-                ["netAmount"] = new OpenApiInteger(4875),
-                ["availableProviders"] = new OpenApiArray
-                {
-                    new OpenApiString("Qi"),
-                    new OpenApiString("ZainCash"),
-                    new OpenApiString("Fib"),
-                    new OpenApiString("SuperQi")
-                }
+                ["createdAtUtc"] = new OpenApiString("2026-08-11T19:40:36.7691927Z"),
+                ["paidAtUtc"] = new OpenApiNull(),
+                ["expiredAtUtc"] = new OpenApiString("2026-08-11T20:40:36.7691936Z"),
+                ["failureReason"] = new OpenApiNull()
             };
         }
     }

@@ -27,11 +27,12 @@
 
       <div class="auth-aside-foot">
         <span>{{ $t('auth.providersLabel') }}</span>
-        <div class="auth-providers">
-          <span>FIB</span>
-          <span>ZainCash</span>
-          <span>QI</span>
-          <span>SuperQi</span>
+        <div class="auth-providers" aria-hidden="true">
+          <img src="/providers/fib.svg" alt="" />
+          <img src="/providers/zaincash.svg" alt="" />
+          <img src="/providers/qi.svg" alt="" />
+          <img src="/providers/superqi.svg" alt="" />
+          <img src="/providers/alqaseh.svg" alt="" />
         </div>
       </div>
     </aside>
@@ -242,9 +243,9 @@ async function resendOtp() {
   border: 1px solid rgba(37, 211, 102, 0.22);
 }
 .otp-banner.mail {
-  background: rgba(108, 60, 236, 0.08);
-  color: #5b21b6;
-  border: 1px solid rgba(108, 60, 236, 0.18);
+  background: rgba(3, 24, 56, 0.08);
+  color: #031838;
+  border: 1px solid rgba(3, 24, 56, 0.18);
 }
 .otp-banner.both {
   background: #f8fafc;

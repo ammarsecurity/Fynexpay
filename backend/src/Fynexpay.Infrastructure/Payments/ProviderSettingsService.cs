@@ -99,6 +99,7 @@ public class ProviderSettingsService : IProviderSettingsService
 
         var qiLogo = settings.Qi?.LogoUrl;
         var superQiLogo = settings.SuperQi?.LogoUrl;
+        var alqasehLogo = settings.Alqaseh?.LogoUrl;
         var zainLogo = settings.ZainCash?.LogoUrl;
         var fibLogo = settings.Fib?.LogoUrl;
 
@@ -119,6 +120,14 @@ public class ProviderSettingsService : IProviderSettingsService
         settings.SuperQi.Test.Password = "WHaNFE5C3qlChqNbAzH4";
         settings.SuperQi.Test.TerminalId = "237984";
 
+        settings.Alqaseh = ProviderBundleSettings.DefaultAlqaseh();
+        settings.Alqaseh.Enabled = true;
+        settings.Alqaseh.Priority = 4;
+        settings.Alqaseh.LogoUrl = alqasehLogo;
+        // Public Alqaseh sandbox credentials (official docs) — Development only via this action.
+        settings.Alqaseh.Test.ClientId = "public_test";
+        settings.Alqaseh.Test.ClientSecret = "Lr10yWWmm1dXLoI7VgXCrQVnlq13c1G0";
+
         settings.ZainCash = ProviderBundleSettings.DefaultZainCash();
         settings.ZainCash.Enabled = true;
         settings.ZainCash.Priority = 1;
@@ -136,16 +145,66 @@ public class ProviderSettingsService : IProviderSettingsService
     public async Task<ProviderEnvCredentials> GetActiveCredentialsAsync(PaymentProviderType provider, CancellationToken ct = default)
     {
         var s = await GetAsync(ct);
-        var env = s.ActiveEnv;
-        return provider switch
+        var env = ProviderEnvironmentScope.Current ?? s.ActiveEnv;
+        return ResolveCredentials(s, provider, env);
+    }
+
+    public async Task<ProviderEnvCredentials> GetCredentialsAsync(
+        PaymentProviderType provider,
+        ProviderEnvironment environment,
+        CancellationToken ct = default)
+    {
+        var s = await GetAsync(ct);
+        return ResolveCredentials(s, provider, environment);
+    }
+
+    public async Task<bool> MatchesWebhookSecretAsync(
+        PaymentProviderType provider,
+        IDictionary<string, string> headers,
+        CancellationToken ct = default)
+    {
+        var s = await GetAsync(ct);
+        var secrets = new[]
+            {
+                ResolveCredentials(s, provider, ProviderEnvironment.Test).WebhookSecret,
+                ResolveCredentials(s, provider, ProviderEnvironment.Production).WebhookSecret
+            }
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (secrets.Count == 0)
+            return true;
+
+        if (!headers.TryGetValue("X-Webhook-Secret", out var provided)
+            && !headers.TryGetValue("X-Fynexpay-Provider-Secret", out provided))
+            return false;
+
+        var b = System.Text.Encoding.UTF8.GetBytes(provided.Trim());
+        foreach (var secret in secrets)
+        {
+            var a = System.Text.Encoding.UTF8.GetBytes(secret);
+            if (a.Length == b.Length && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(a, b))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static ProviderEnvCredentials ResolveCredentials(
+        ProviderRuntimeSettings s,
+        PaymentProviderType provider,
+        ProviderEnvironment env) =>
+        provider switch
         {
             PaymentProviderType.Fib => s.Fib.For(env),
             PaymentProviderType.ZainCash => s.ZainCash.For(env),
             PaymentProviderType.Qi => s.Qi.For(env),
             PaymentProviderType.SuperQi => ResolveSuperQiCredentials(s, env),
+            PaymentProviderType.Alqaseh => s.Alqaseh.For(env),
             _ => throw new ArgumentException("مزود غير صالح")
         };
-    }
 
     private static ProviderEnvCredentials ResolveSuperQiCredentials(ProviderRuntimeSettings s, ProviderEnvironment env)
     {
@@ -175,6 +234,7 @@ public class ProviderSettingsService : IProviderSettingsService
             PaymentProviderType.ZainCash => s.ZainCash.Enabled,
             PaymentProviderType.Qi => s.Qi.Enabled,
             PaymentProviderType.SuperQi => s.SuperQi.Enabled,
+            PaymentProviderType.Alqaseh => s.Alqaseh.Enabled,
             _ => false
         };
     }
@@ -193,7 +253,8 @@ public class ProviderSettingsService : IProviderSettingsService
                 (PaymentProviderType.Fib, s.Fib),
                 (PaymentProviderType.ZainCash, s.ZainCash),
                 (PaymentProviderType.Qi, s.Qi),
-                (PaymentProviderType.SuperQi, s.SuperQi)
+                (PaymentProviderType.SuperQi, s.SuperQi),
+                (PaymentProviderType.Alqaseh, s.Alqaseh)
             }
             .Where(x => x.Item2.Enabled)
             .OrderBy(x => x.Item2.Priority)
@@ -257,6 +318,9 @@ public class ProviderSettingsService : IProviderSettingsService
         defaults.SuperQi = ProviderBundleSettings.DefaultSuperQi();
         defaults.SuperQi.Priority = 3;
 
+        defaults.Alqaseh = ProviderBundleSettings.DefaultAlqaseh();
+        defaults.Alqaseh.Priority = 4;
+
         return defaults;
     }
 
@@ -267,6 +331,7 @@ public class ProviderSettingsService : IProviderSettingsService
         s.ZainCash ??= ProviderBundleSettings.DefaultZainCash();
         s.Qi ??= ProviderBundleSettings.DefaultQi();
         s.SuperQi ??= ProviderBundleSettings.DefaultSuperQi();
+        s.Alqaseh ??= ProviderBundleSettings.DefaultAlqaseh();
         s.Fib.Test ??= new ProviderEnvCredentials();
         s.Fib.Production ??= new ProviderEnvCredentials();
         s.ZainCash.Test ??= new ProviderEnvCredentials();
@@ -275,10 +340,24 @@ public class ProviderSettingsService : IProviderSettingsService
         s.Qi.Production ??= new ProviderEnvCredentials();
         s.SuperQi.Test ??= new ProviderEnvCredentials();
         s.SuperQi.Production ??= new ProviderEnvCredentials();
+        s.Alqaseh.Test ??= new ProviderEnvCredentials();
+        s.Alqaseh.Production ??= new ProviderEnvCredentials();
         if (string.IsNullOrWhiteSpace(s.Fib.LogoUrl)) s.Fib.LogoUrl = "/providers/fib.svg";
         if (string.IsNullOrWhiteSpace(s.ZainCash.LogoUrl)) s.ZainCash.LogoUrl = "/providers/zaincash.svg";
         if (string.IsNullOrWhiteSpace(s.Qi.LogoUrl)) s.Qi.LogoUrl = "/providers/qi.svg";
         if (string.IsNullOrWhiteSpace(s.SuperQi.LogoUrl)) s.SuperQi.LogoUrl = "/providers/superqi.svg";
+        if (string.IsNullOrWhiteSpace(s.Alqaseh.LogoUrl)) s.Alqaseh.LogoUrl = "/providers/alqaseh.svg";
+        s.Fib.DisplayName = ClampName(s.Fib.DisplayName, "FIB");
+        s.ZainCash.DisplayName = ClampName(s.ZainCash.DisplayName, "ZainCash");
+        s.Qi.DisplayName = ClampName(s.Qi.DisplayName, "QI Card");
+        s.SuperQi.DisplayName = ClampName(s.SuperQi.DisplayName, "SuperQi");
+        s.Alqaseh.DisplayName = ClampName(s.Alqaseh.DisplayName, "Alqaseh");
+    }
+
+    private static string ClampName(string? value, string fallback)
+    {
+        var name = string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+        return name.Length > 64 ? name[..64].Trim() : name;
     }
 
     private static ProviderRuntimeSettings Clone(ProviderRuntimeSettings s) =>

@@ -254,8 +254,7 @@ public class FibPaymentProvider : HttpPaymentProviderBase, IPaymentProvider
 
     public async Task<ProviderWebhookResult?> HandleWebhookAsync(string payload, IDictionary<string, string> headers, CancellationToken ct = default)
     {
-        var creds = await _settings.GetActiveCredentialsAsync(PaymentProviderType.Fib, ct);
-        if (!WebhookSecrets.MatchesOptionalSecret(creds.WebhookSecret, headers))
+        if (!await _settings.MatchesWebhookSecretAsync(PaymentProviderType.Fib, headers, ct))
             return null;
 
         using var doc = JsonDocument.Parse(payload);
@@ -506,23 +505,42 @@ public class ZainCashPaymentProvider : HttpPaymentProviderBase, IPaymentProvider
     {
         try
         {
-            var creds = await _settings.GetActiveCredentialsAsync(PaymentProviderType.ZainCash, ct);
-            if (!WebhookSecrets.MatchesOptionalSecret(creds.WebhookSecret, headers))
+            var test = await _settings.GetCredentialsAsync(PaymentProviderType.ZainCash, ProviderEnvironment.Test, ct);
+            var prod = await _settings.GetCredentialsAsync(PaymentProviderType.ZainCash, ProviderEnvironment.Production, ct);
+            if (!await _settings.MatchesWebhookSecretAsync(PaymentProviderType.ZainCash, headers, ct))
                 return null;
 
             string json;
             if (payload.Trim().StartsWith('{'))
             {
                 // JSON bodies require an explicit webhook secret when configured; without JWT there is no HMAC.
-                if (string.IsNullOrWhiteSpace(creds.WebhookSecret) && string.IsNullOrWhiteSpace(creds.Secret))
+                if (string.IsNullOrWhiteSpace(test.WebhookSecret) && string.IsNullOrWhiteSpace(prod.WebhookSecret)
+                    && string.IsNullOrWhiteSpace(test.Secret) && string.IsNullOrWhiteSpace(prod.Secret))
                     return null;
                 json = payload;
             }
             else
             {
-                var secret = FirstNonEmpty(creds.Secret, creds.ClientSecret, creds.WebhookSecret);
-                if (string.IsNullOrWhiteSpace(secret) || !TryVerifyHs256Jwt(payload, secret, out json))
+                var secrets = new[]
+                    {
+                        test.Secret, test.ClientSecret, test.WebhookSecret,
+                        prod.Secret, prod.ClientSecret, prod.WebhookSecret
+                    }
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+                string? verifiedJson = null;
+                foreach (var secret in secrets)
+                {
+                    if (TryVerifyHs256Jwt(payload, secret!, out var candidate))
+                    {
+                        verifiedJson = candidate;
+                        break;
+                    }
+                }
+                if (verifiedJson == null)
                     return null;
+                json = verifiedJson;
             }
 
             using var doc = JsonDocument.Parse(json);
@@ -762,15 +780,17 @@ public abstract class QiGatePaymentProviderBase : HttpPaymentProviderBase, IPaym
 
     public async Task<ProviderWebhookResult?> HandleWebhookAsync(string payload, IDictionary<string, string> headers, CancellationToken ct = default)
     {
-        var creds = await _settings.GetActiveCredentialsAsync(ProviderType, ct);
-        if (!WebhookSecrets.MatchesOptionalSecret(creds.WebhookSecret, headers))
+        if (!await _settings.MatchesWebhookSecretAsync(ProviderType, headers, ct))
             return null;
-        // Without a configured webhook secret, require Basic auth matching Qi credentials.
-        if (string.IsNullOrWhiteSpace(creds.WebhookSecret))
-        {
-            if (!WebhookSecrets.MatchesBasicAuth(creds.Username, creds.Password, headers))
-                return null;
-        }
+
+        var test = await _settings.GetCredentialsAsync(ProviderType, ProviderEnvironment.Test, ct);
+        var prod = await _settings.GetCredentialsAsync(ProviderType, ProviderEnvironment.Production, ct);
+        var hasSecret = !string.IsNullOrWhiteSpace(test.WebhookSecret) || !string.IsNullOrWhiteSpace(prod.WebhookSecret);
+        // Without a configured webhook secret, require Basic auth matching Qi credentials (either env).
+        if (!hasSecret
+            && !WebhookSecrets.MatchesBasicAuth(test.Username, test.Password, headers)
+            && !WebhookSecrets.MatchesBasicAuth(prod.Username, prod.Password, headers))
+            return null;
 
         using var doc = JsonDocument.Parse(payload);
         var root = doc.RootElement;
@@ -790,6 +810,245 @@ public abstract class QiGatePaymentProviderBase : HttpPaymentProviderBase, IPaym
             Status = status,
             RawPayload = payload
         };
+    }
+}
+
+/// <summary>
+/// Al Qaseh Payment Gateway — hosted payment page for non-PCI merchants.
+/// Docs: https://docs.alqaseh.com/payment-api
+/// </summary>
+public class AlqasehPaymentProvider : HttpPaymentProviderBase, IPaymentProvider
+{
+    private readonly IProviderSettingsService _settings;
+    private readonly string _publicBaseUrl;
+
+    private static readonly JsonSerializerOptions SnakeJson = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+    };
+
+    public AlqasehPaymentProvider(
+        IHttpClientFactory factory,
+        IProviderSettingsService settings,
+        IOptions<AppOptions> appOptions,
+        ILogger<AlqasehPaymentProvider> logger)
+        : base(factory, logger)
+    {
+        _settings = settings;
+        _publicBaseUrl = appOptions.Value.PublicBaseUrl;
+    }
+
+    public PaymentProviderType ProviderType => PaymentProviderType.Alqaseh;
+
+    private async Task<(ProviderEnvCredentials Creds, bool UseMock)> ResolveAsync(CancellationToken ct)
+    {
+        var creds = await _settings.GetActiveCredentialsAsync(PaymentProviderType.Alqaseh, ct);
+        var useMock = await _settings.UseMockAsync(ct) &&
+                      (string.IsNullOrWhiteSpace(creds.ClientId) || string.IsNullOrWhiteSpace(creds.ClientSecret));
+        return (creds, useMock);
+    }
+
+    public async Task<ProviderPaymentResult> CreatePaymentAsync(CreateProviderPaymentRequest request, CancellationToken ct = default)
+    {
+        var (creds, useMock) = await ResolveAsync(ct);
+        if (useMock)
+            return await new MockPaymentProvider(PaymentProviderType.Alqaseh, _publicBaseUrl).CreatePaymentAsync(request, ct);
+
+        try
+        {
+            var orderId = request.PaymentId.ToString("N");
+            var body = new Dictionary<string, object?>
+            {
+                ["amount"] = request.Amount,
+                ["country"] = "IQ",
+                ["currency"] = string.IsNullOrWhiteSpace(request.Currency) ? "IQD" : request.Currency,
+                ["order_id"] = orderId,
+                ["redirect_url"] = FirstUrl(request.SuccessUrl, request.StatusCallbackUrl),
+                ["webhook_url"] = request.StatusCallbackUrl ?? "",
+                ["transaction_type"] = "Retail",
+                ["description"] = Truncate(request.Description, 200),
+                ["token_expiry_in_hour"] = 1,
+                ["custom_data"] = new Dictionary<string, string>
+                {
+                    ["merchant_order_id"] = request.MerchantOrderId ?? "",
+                    ["fynexpay_payment_id"] = orderId
+                }
+            };
+
+            var raw = await SendAsync(HttpMethod.Post, creds, "egw/payments/create", body, ct);
+            using var doc = JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+            if (!TryGetString(root, "payment_id", out var paymentId) || string.IsNullOrWhiteSpace(paymentId))
+                return new ProviderPaymentResult { Success = false, ErrorMessage = "Alqaseh: missing payment_id", RawResponse = raw };
+
+            TryGetString(root, "token", out var token);
+            var checkout = BuildPayUrl(creds, token);
+            return new ProviderPaymentResult
+            {
+                Success = true,
+                ProviderPaymentId = paymentId,
+                CheckoutUrl = checkout,
+                ReadableCode = token,
+                ValidUntilUtc = DateTime.UtcNow.AddHours(1),
+                RawResponse = raw
+            };
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Alqaseh create payment failed");
+            return new ProviderPaymentResult { Success = false, ErrorMessage = ex.Message };
+        }
+    }
+
+    public async Task<ProviderStatusResult> GetStatusAsync(string providerPaymentId, CancellationToken ct = default)
+    {
+        var (creds, useMock) = await ResolveAsync(ct);
+        if (useMock)
+            return await new MockPaymentProvider(PaymentProviderType.Alqaseh, _publicBaseUrl).GetStatusAsync(providerPaymentId, ct);
+
+        try
+        {
+            var raw = await SendAsync(HttpMethod.Get, creds, $"egw/payments/{Uri.EscapeDataString(providerPaymentId)}", null, ct);
+            using var doc = JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+            var statusText = TryGetString(root, "status", out var st) ? st
+                : TryGetString(root, "payment_status", out var ps) ? ps
+                : "prepared";
+            return new ProviderStatusResult
+            {
+                Status = MapStatus(statusText),
+                RawResponse = raw
+            };
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Alqaseh get status failed for {Id}", providerPaymentId);
+            return new ProviderStatusResult { Status = PaymentStatus.Pending, FailureReason = ex.Message };
+        }
+    }
+
+    public async Task<bool> CancelAsync(string providerPaymentId, CancellationToken ct = default)
+    {
+        var (creds, useMock) = await ResolveAsync(ct);
+        if (useMock) return true;
+
+        try
+        {
+            await SendAsync(HttpMethod.Post, creds, "egw/payments/revoke",
+                new Dictionary<string, object?> { ["payment_id"] = providerPaymentId }, ct);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Alqaseh revoke failed for {Id}", providerPaymentId);
+            return false;
+        }
+    }
+
+    public async Task<ProviderWebhookResult?> HandleWebhookAsync(string payload, IDictionary<string, string> headers, CancellationToken ct = default)
+    {
+        if (!await _settings.MatchesWebhookSecretAsync(PaymentProviderType.Alqaseh, headers, ct))
+            return null;
+
+        using var doc = JsonDocument.Parse(payload);
+        var root = doc.RootElement;
+
+        TryGetString(root, "payment_id", out var providerId);
+        TryGetString(root, "order_id", out var orderId);
+        var statusText = TryGetString(root, "payment_status", out var ps) ? ps
+            : TryGetString(root, "status", out var st) ? st
+            : "Pending";
+
+        Guid? paymentId = null;
+        if (!string.IsNullOrWhiteSpace(orderId) && Guid.TryParseExact(orderId, "N", out var parsed))
+            paymentId = parsed;
+        else if (!string.IsNullOrWhiteSpace(orderId) && Guid.TryParse(orderId, out var parsed2))
+            paymentId = parsed2;
+
+        return new ProviderWebhookResult
+        {
+            PaymentId = paymentId,
+            ProviderPaymentId = providerId,
+            Status = MapStatus(statusText),
+            RawPayload = payload
+        };
+    }
+
+    private async Task<string> SendAsync(
+        HttpMethod method,
+        ProviderEnvCredentials creds,
+        string relativePath,
+        object? body,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(creds.BaseUrl))
+            throw new InvalidOperationException("Alqaseh BaseUrl غير مضبوط");
+        if (string.IsNullOrWhiteSpace(creds.ClientId) || string.IsNullOrWhiteSpace(creds.ClientSecret))
+            throw new InvalidOperationException("Alqaseh ClientId/ClientSecret غير مضبوطين");
+
+        var client = HttpClientFactory.CreateClient("alqaseh");
+        var url = $"{creds.BaseUrl.TrimEnd('/')}/{relativePath.TrimStart('/')}";
+        using var req = new HttpRequestMessage(method, url);
+        var basic = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{creds.ClientId}:{creds.ClientSecret}"));
+        req.Headers.Authorization = new AuthenticationHeaderValue("Basic", basic);
+        if (body != null)
+            req.Content = new StringContent(JsonSerializer.Serialize(body, SnakeJson), Encoding.UTF8, "application/json");
+
+        var response = await client.SendAsync(req, ct);
+        var raw = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Alqaseh {(int)response.StatusCode}: {Truncate(raw, 400)}");
+        return raw;
+    }
+
+    private static string BuildPayUrl(ProviderEnvCredentials creds, string? token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+            return "";
+        var payBase = string.IsNullOrWhiteSpace(creds.AuthUrl)
+            ? InferPayBase(creds.BaseUrl)
+            : creds.AuthUrl.TrimEnd('/');
+        return $"{payBase}/pay/{token}";
+    }
+
+    private static string InferPayBase(string apiBase)
+    {
+        if (apiBase.Contains("api-test", StringComparison.OrdinalIgnoreCase))
+            return "https://pay-test.alqaseh.com";
+        return "https://pay.alqaseh.com";
+    }
+
+    private static PaymentStatus MapStatus(string? statusText)
+    {
+        var s = (statusText ?? "").Trim().ToLowerInvariant();
+        return s switch
+        {
+            "succeeded" or "success" or "paid" => PaymentStatus.Paid,
+            "failed" or "fail" => PaymentStatus.Failed,
+            "declined" or "decline" or "rejected" => PaymentStatus.Declined,
+            "expired" or "expire" => PaymentStatus.Expired,
+            "revoked" or "cancelled" or "canceled" => PaymentStatus.Cancelled,
+            _ => PaymentStatus.Pending
+        };
+    }
+
+    private static bool TryGetString(JsonElement root, string name, out string? value)
+    {
+        value = null;
+        if (!root.TryGetProperty(name, out var el))
+            return false;
+        value = el.ValueKind == JsonValueKind.String ? el.GetString() : el.ToString();
+        return !string.IsNullOrWhiteSpace(value);
+    }
+
+    private static string FirstUrl(params string?[] urls)
+        => urls.FirstOrDefault(u => !string.IsNullOrWhiteSpace(u)) ?? "";
+
+    private static string Truncate(string? value, int max)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+        return value.Length <= max ? value : value[..max];
     }
 }
 

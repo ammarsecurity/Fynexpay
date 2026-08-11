@@ -17,6 +17,8 @@ public class ProviderRuntimeSettings
     public ProviderBundleSettings Qi { get; set; } = ProviderBundleSettings.DefaultQi();
     /// <summary>Pay with SuperQi (QI Gate ALIPAY method) — https://developers-gate.qi.iq/docs/category/pay-with-superqi</summary>
     public ProviderBundleSettings SuperQi { get; set; } = ProviderBundleSettings.DefaultSuperQi();
+    /// <summary>Al Qaseh hosted payment page — https://docs.alqaseh.com/payment-api</summary>
+    public ProviderBundleSettings Alqaseh { get; set; } = ProviderBundleSettings.DefaultAlqaseh();
 
     public ProviderEnvironment ActiveEnv =>
         ActiveEnvironment.Equals("Production", StringComparison.OrdinalIgnoreCase)
@@ -28,6 +30,8 @@ public class ProviderBundleSettings
 {
     public bool Enabled { get; set; } = true;
     public int Priority { get; set; }
+    /// <summary>Customer-facing display name (checkout + dashboard).</summary>
+    public string DisplayName { get; set; } = "";
     /// <summary>Public relative URL e.g. /uploads/providers/fib.png</summary>
     public string? LogoUrl { get; set; }
     public ProviderEnvCredentials Test { get; set; } = new();
@@ -36,10 +40,14 @@ public class ProviderBundleSettings
     public ProviderEnvCredentials For(ProviderEnvironment env) =>
         env == ProviderEnvironment.Production ? Production : Test;
 
+    public string ResolveDisplayName(string fallback) =>
+        string.IsNullOrWhiteSpace(DisplayName) ? fallback : DisplayName.Trim();
+
     public static ProviderBundleSettings DefaultFib() => new()
     {
         Enabled = true,
         Priority = 2,
+        DisplayName = "FIB",
         LogoUrl = "/providers/fib.svg",
         Test = new ProviderEnvCredentials
         {
@@ -57,6 +65,7 @@ public class ProviderBundleSettings
     {
         Enabled = true,
         Priority = 1,
+        DisplayName = "ZainCash",
         LogoUrl = "/providers/zaincash.svg",
         Test = new ProviderEnvCredentials
         {
@@ -75,6 +84,7 @@ public class ProviderBundleSettings
     {
         Enabled = true,
         Priority = 0,
+        DisplayName = "QI Card",
         LogoUrl = "/providers/qi.svg",
         Test = new ProviderEnvCredentials
         {
@@ -94,6 +104,7 @@ public class ProviderBundleSettings
     {
         Enabled = true,
         Priority = 3,
+        DisplayName = "SuperQi",
         LogoUrl = "/providers/superqi.svg",
         Test = new ProviderEnvCredentials
         {
@@ -102,6 +113,29 @@ public class ProviderBundleSettings
         Production = new ProviderEnvCredentials
         {
             BaseUrl = "https://api.gate.qi.iq/api/v1"
+        }
+    };
+
+    /// <summary>
+    /// Al Qaseh Payment Gateway (non-PCI hosted page).
+    /// Docs: https://docs.alqaseh.com/payment-api
+    /// AuthUrl holds the pay-page host (e.g. https://pay-test.alqaseh.com).
+    /// </summary>
+    public static ProviderBundleSettings DefaultAlqaseh() => new()
+    {
+        Enabled = true,
+        Priority = 4,
+        DisplayName = "Alqaseh",
+        LogoUrl = "/providers/alqaseh.svg",
+        Test = new ProviderEnvCredentials
+        {
+            BaseUrl = "https://api-test.alqaseh.com/v1",
+            AuthUrl = "https://pay-test.alqaseh.com"
+        },
+        Production = new ProviderEnvCredentials
+        {
+            BaseUrl = "https://api.alqaseh.com/v1",
+            AuthUrl = "https://pay.alqaseh.com"
         }
     };
 }
@@ -129,6 +163,8 @@ public interface IProviderSettingsService
     Task<ProviderRuntimeSettings> SetEnvironmentAsync(string environment, CancellationToken ct = default);
     Task<ProviderRuntimeSettings> LoadOfficialSandboxDemoAsync(CancellationToken ct = default);
     Task<ProviderEnvCredentials> GetActiveCredentialsAsync(PaymentProviderType provider, CancellationToken ct = default);
+    Task<ProviderEnvCredentials> GetCredentialsAsync(PaymentProviderType provider, ProviderEnvironment environment, CancellationToken ct = default);
+    Task<bool> MatchesWebhookSecretAsync(PaymentProviderType provider, IDictionary<string, string> headers, CancellationToken ct = default);
     Task<bool> IsEnabledAsync(PaymentProviderType provider, CancellationToken ct = default);
     Task<bool> UseMockAsync(CancellationToken ct = default);
     Task<IReadOnlyList<PaymentProviderType>> GetEnabledOrderedAsync(CancellationToken ct = default);

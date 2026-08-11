@@ -1,52 +1,55 @@
 <template>
   <SiteNav />
 
-  <section class="section contact-hero" v-if="c">
-    <div class="section-head">
-      <span class="eyebrow">{{ c.contactEyebrow }}</span>
-      <h1>{{ c.contactTitle }}</h1>
-      <p>{{ c.contactSubtitle }}</p>
-    </div>
+  <main class="contact-page" v-if="c">
+    <div class="contact-shell">
+      <aside class="contact-panel">
+        <span class="eyebrow">{{ c.contactEyebrow }}</span>
+        <h1>{{ c.contactTitle }}</h1>
+        <p>{{ c.contactSubtitle }}</p>
 
-    <div class="contact-grid">
-      <div class="contact-info">
-        <div class="info-card">
-          <span class="label">{{ c.contactEmailLabel }}</span>
-          <a :href="'mailto:' + c.contactEmail">{{ c.contactEmail }}</a>
-        </div>
-        <div class="info-card">
-          <span class="label">{{ c.contactPhoneLabel }}</span>
-          <a :href="'tel:' + c.contactPhone">{{ c.contactPhone }}</a>
-        </div>
-        <div class="info-card">
-          <span class="label">{{ c.contactAddressLabel }}</span>
-          <strong>{{ c.contactAddress }}</strong>
-        </div>
-        <div class="info-card">
-          <span class="label">{{ c.contactHoursLabel }}</span>
-          <strong>{{ c.contactHours }}</strong>
-        </div>
-      </div>
+        <ul class="contact-list">
+          <li>
+            <span class="label">{{ c.contactEmailLabel }}</span>
+            <a class="value ltr" :href="'mailto:' + c.contactEmail">{{ c.contactEmail }}</a>
+          </li>
+          <li>
+            <span class="label">{{ c.contactPhoneLabel }}</span>
+            <a class="value ltr" :href="'tel:' + c.contactPhone">{{ c.contactPhone }}</a>
+          </li>
+          <li>
+            <span class="label">{{ c.contactAddressLabel }}</span>
+            <strong class="value">{{ c.contactAddress }}</strong>
+          </li>
+          <li>
+            <span class="label">{{ c.contactHoursLabel }}</span>
+            <strong class="value">{{ c.contactHours }}</strong>
+          </li>
+        </ul>
+      </aside>
 
       <form class="contact-form" @submit.prevent="submit">
+        <h2>{{ c.contactFormSubmit }}</h2>
+        <p class="form-note">{{ c.contactFormNote }}</p>
+
         <div class="field">
-          <label>{{ c.contactFormName }}</label>
-          <input v-model="form.name" required />
+          <label for="contact-name">{{ c.contactFormName }}</label>
+          <input id="contact-name" v-model="form.name" autocomplete="name" required />
         </div>
         <div class="field">
-          <label>{{ c.contactFormEmail }}</label>
-          <input v-model="form.email" type="email" required />
+          <label for="contact-email">{{ c.contactFormEmail }}</label>
+          <input id="contact-email" v-model="form.email" type="email" autocomplete="email" dir="ltr" required />
         </div>
         <div class="field">
-          <label>{{ c.contactFormMessage }}</label>
-          <textarea v-model="form.message" rows="5" required />
+          <label for="contact-message">{{ c.contactFormMessage }}</label>
+          <textarea id="contact-message" v-model="form.message" rows="5" required />
         </div>
-        <p class="muted note">{{ c.contactFormNote }}</p>
-        <p v-if="sent" class="ok">{{ c.contactFormSuccess }}</p>
-        <button class="btn primary" type="submit">{{ c.contactFormSubmit }}</button>
+
+        <p v-if="sent" class="ok" role="status">{{ c.contactFormSuccess }}</p>
+        <button class="btn primary submit" type="submit">{{ c.contactFormSubmit }}</button>
       </form>
     </div>
-  </section>
+  </main>
 
   <footer class="site-footer" v-if="c">© {{ year }} Fynexpay — {{ c.footer }}</footer>
 </template>
@@ -70,46 +73,118 @@ function submit() {
 </script>
 
 <style scoped>
-.contact-hero { padding-top: 48px; }
-.contact-hero h1 { font-size: clamp(2rem, 4vw, 2.8rem); margin: 8px 0 12px; }
-.contact-grid {
-  max-width: 1100px;
-  margin: 32px auto 0;
-  padding: 0 24px;
+.contact-page {
+  min-height: calc(100vh - 64px);
+  padding: 40px 24px 64px;
+  background:
+    radial-gradient(800px 380px at 100% 0%, rgba(3, 24, 56, 0.07), transparent 55%),
+    var(--bg-soft);
+}
+
+.contact-shell {
+  max-width: 960px;
+  margin: 0 auto;
   display: grid;
-  grid-template-columns: 0.9fr 1.1fr;
-  gap: 24px;
-}
-.contact-info { display: grid; gap: 12px; }
-.info-card {
+  grid-template-columns: 0.95fr 1.05fr;
   background: #fff;
   border: 1px solid var(--line);
-  border-radius: 18px;
-  padding: 18px 20px;
+  border-radius: 24px;
+  overflow: hidden;
   box-shadow: var(--shadow-sm);
 }
-.info-card .label {
+
+.contact-panel {
+  padding: 36px 32px;
+  background:
+    radial-gradient(500px 280px at 0% 100%, rgba(255, 255, 255, 0.08), transparent 55%),
+    linear-gradient(160deg, #021225 0%, #031838 55%, #0a2450 100%);
+  color: #fff;
+}
+.contact-panel .eyebrow {
+  display: inline-flex;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+.contact-panel h1 {
+  margin: 16px 0 10px;
+  font-size: clamp(1.7rem, 3vw, 2.2rem);
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+.contact-panel > p {
+  margin: 0 0 28px;
+  color: rgba(255, 255, 255, 0.78);
+  line-height: 1.7;
+  font-size: 0.98rem;
+}
+
+.contact-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+.contact-list li {
+  padding: 14px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+.contact-list .label {
   display: block;
-  color: var(--muted);
-  font-size: 0.82rem;
-  font-weight: 700;
   margin-bottom: 6px;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.78rem;
+  font-weight: 800;
 }
-.info-card a, .info-card strong {
-  color: var(--brand);
-  font-weight: 700;
-  font-size: 1.05rem;
+.contact-list .value {
+  color: #fff;
+  font-weight: 800;
+  font-size: 1.02rem;
+  line-height: 1.45;
+  word-break: break-word;
 }
+.contact-list a.value:hover {
+  text-decoration: underline;
+}
+.ltr {
+  direction: ltr;
+  text-align: start;
+  unicode-bidi: isolate;
+  display: inline-block;
+}
+
 .contact-form {
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 22px;
-  padding: 24px;
-  box-shadow: var(--shadow-sm);
+  padding: 36px 32px;
+  display: flex;
+  flex-direction: column;
 }
-.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
-.field label { color: var(--muted); font-weight: 700; font-size: 0.9rem; }
-.field input, .field textarea {
+.contact-form h2 {
+  margin: 0 0 6px;
+  font-size: 1.35rem;
+  color: var(--brand);
+}
+.form-note {
+  margin: 0 0 22px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.field label {
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.field input,
+.field textarea {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 12px 14px;
@@ -117,15 +192,35 @@ function submit() {
   font: inherit;
   color: var(--ink);
   background: #fff;
+  resize: vertical;
 }
-.field input:focus, .field textarea:focus {
-  border-color: rgba(108, 60, 236, 0.55);
-  box-shadow: 0 0 0 4px rgba(108, 60, 236, 0.12);
+.field textarea { min-height: 120px; }
+.field input:focus,
+.field textarea:focus {
+  border-color: rgba(3, 24, 56, 0.5);
+  box-shadow: 0 0 0 4px rgba(3, 24, 56, 0.1);
 }
-.note { margin: 0 0 14px; font-size: 0.88rem; }
-.ok { color: #047857; font-weight: 700; margin: 0 0 12px; }
-.contact-form .btn { width: 100%; justify-content: center; }
+.ok {
+  color: #047857;
+  font-weight: 700;
+  margin: 0 0 12px;
+}
+.submit {
+  width: 100%;
+  justify-content: center;
+  height: 48px;
+  border-radius: 12px;
+  margin-top: auto;
+}
+
 @media (max-width: 860px) {
-  .contact-grid { grid-template-columns: 1fr; }
+  .contact-page { padding: 20px 16px 48px; }
+  .contact-shell {
+    grid-template-columns: 1fr;
+    border-radius: 20px;
+  }
+  .contact-panel,
+  .contact-form { padding: 24px 20px; }
+  .contact-panel > p { margin-bottom: 20px; }
 }
 </style>

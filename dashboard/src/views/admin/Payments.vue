@@ -5,10 +5,8 @@
     <DataToolbar
       v-model="filters"
       :statuses="['Paid', 'Pending', 'Failed', 'Cancelled', 'Expired']"
-      :providers="providerOptions"
       :search-placeholder="$t('payments.searchPlaceholder')"
       :status-all-label="$t('payments.allStatuses')"
-      :provider-all-label="$t('payments.allProviders')"
       @apply="applyFilters"
       @reset="resetFilters"
     />
@@ -87,7 +85,6 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
 const selectedId = ref('')
-const providerOptions = ['Fib', 'ZainCash', 'Qi', 'SuperQi']
 const filters = reactive({ q: '', status: '', provider: '', from: '', to: '' })
 const applied = reactive({ q: '', status: '', provider: '', from: '', to: '' })
 
@@ -163,7 +160,7 @@ onMounted(load)
   border-bottom: 1px solid var(--line);
   vertical-align: middle;
 }
-.payments-table tr:hover td { background: rgba(108, 60, 236, 0.03); }
+.payments-table tr:hover td { background: rgba(3, 24, 56, 0.03); }
 .date-cell { display: grid; gap: 2px; min-width: 110px; }
 .date-cell .muted { font-size: 0.78rem; }
 .order-cell { display: grid; gap: 2px; min-width: 140px; }

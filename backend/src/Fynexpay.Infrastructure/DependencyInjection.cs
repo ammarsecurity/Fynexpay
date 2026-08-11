@@ -52,12 +52,14 @@ public static class DependencyInjection
         services.AddScoped<IPaymentProvider, ZainCashPaymentProvider>();
         services.AddScoped<IPaymentProvider, QiPaymentProvider>();
         services.AddScoped<IPaymentProvider, SuperQiPaymentProvider>();
+        services.AddScoped<IPaymentProvider, AlqasehPaymentProvider>();
 
         services.AddHttpClient("merchant-webhooks").ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(15));
         services.AddHttpClient("fib");
         services.AddHttpClient("fib-auth");
         services.AddHttpClient("zaincash");
         services.AddHttpClient("qi");
+        services.AddHttpClient("alqaseh");
         services.AddHttpClient("ultramsg").ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
 
         var jwtKey = configuration["Jwt:Key"];
@@ -127,6 +129,12 @@ public static class DependencyInjection
         await EnsureColumnAsync(db, "Merchants", "ZainCashEnabled", "TINYINT(1) NOT NULL DEFAULT 1");
         await EnsureColumnAsync(db, "Merchants", "QiEnabled", "TINYINT(1) NOT NULL DEFAULT 1");
         await EnsureColumnAsync(db, "Merchants", "SuperQiEnabled", "TINYINT(1) NOT NULL DEFAULT 1");
+        await EnsureColumnAsync(db, "Merchants", "AlqasehEnabled", "TINYINT(1) NOT NULL DEFAULT 1");
+        await EnsureColumnAsync(db, "Merchants", "FibCommissionPercent", "decimal(5,2) NOT NULL DEFAULT 2.50");
+        await EnsureColumnAsync(db, "Merchants", "ZainCashCommissionPercent", "decimal(5,2) NOT NULL DEFAULT 2.50");
+        await EnsureColumnAsync(db, "Merchants", "QiCommissionPercent", "decimal(5,2) NOT NULL DEFAULT 2.50");
+        await EnsureColumnAsync(db, "Merchants", "SuperQiCommissionPercent", "decimal(5,2) NOT NULL DEFAULT 2.50");
+        await EnsureColumnAsync(db, "Merchants", "AlqasehCommissionPercent", "decimal(5,2) NOT NULL DEFAULT 2.50");
         await EnsureColumnAsync(db, "Payments", "ProviderCheckoutUrl", "longtext NULL");
         await EnsureColumnAsync(db, "Payments", "RefundLedgerApplied", "TINYINT(1) NOT NULL DEFAULT 0");
         await EnsureMerchantPlatformsTableAsync(db);
@@ -136,6 +144,9 @@ public static class DependencyInjection
         await EnsureColumnAsync(db, "Payments", "CustomerPhone", "varchar(20) NULL");
         await EnsureColumnAsync(db, "Payments", "CustomerPhoneVerifiedAtUtc", "datetime(6) NULL");
         await EnsureColumnAsync(db, "Payments", "CustomerEmail", "varchar(256) NULL");
+        await EnsureColumnAsync(db, "Payments", "IsTest", "TINYINT(1) NOT NULL DEFAULT 0");
+        await EnsureColumnAsync(db, "ApiKeys", "IsTest", "TINYINT(1) NOT NULL DEFAULT 0");
+        await EnsureColumnAsync(db, "MerchantPlatforms", "OneTimeTestApiKey", "longtext NULL");
         await EnsureOtpChallengesTableAsync(db);
         await EnsureColumnAsync(db, "OtpChallenges", "TargetEmail", "varchar(256) NULL");
         await EnsureNotificationsTableAsync(db);
@@ -256,7 +267,7 @@ public static class DependencyInjection
             throw new InvalidOperationException("Invalid schema identifier");
 
         // Allow only a constrained DDL definition alphabet (no user input reaches here).
-        if (!Regex.IsMatch(definition, @"^[A-Za-z0-9_\(\)\s,]+$"))
+        if (!Regex.IsMatch(definition, @"^[A-Za-z0-9_\(\)\s,\.]+$"))
             throw new InvalidOperationException("Invalid column definition");
 
         var conn = db.Database.GetDbConnection();

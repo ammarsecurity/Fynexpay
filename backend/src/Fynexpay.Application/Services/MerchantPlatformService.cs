@@ -26,7 +26,7 @@ public class MerchantPlatformService
     public async Task<IReadOnlyList<MerchantPlatformDto>> ListForMerchantAsync(Guid merchantId, CancellationToken ct = default)
     {
         var list = await _db.MerchantPlatforms
-            .Include(p => p.ApiKey)
+            .Include(p => p.ApiKeys)
             .Where(p => p.MerchantId == merchantId)
             .OrderByDescending(p => p.CreatedAtUtc)
             .ToListAsync(ct);
@@ -37,7 +37,7 @@ public class MerchantPlatformService
     {
         var query = _db.MerchantPlatforms
             .Include(p => p.Merchant)
-            .Include(p => p.ApiKey)
+            .Include(p => p.ApiKeys)
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<PlatformStatus>(status, true, out var st))
@@ -60,7 +60,7 @@ public class MerchantPlatformService
     {
         var platform = await _db.MerchantPlatforms
             .Include(p => p.Merchant)
-            .Include(p => p.ApiKey)
+            .Include(p => p.ApiKeys)
             .FirstOrDefaultAsync(p => p.Id == platformId, ct)
             ?? throw new InvalidOperationException("المنصة غير موجودة");
 
@@ -79,6 +79,9 @@ public class MerchantPlatformService
             .Where(p => p.Status == PaymentStatus.Paid)
             .SumAsync(p => (decimal?)p.Amount, ct) ?? 0;
 
+        var live = PickLiveKey(platform);
+        var test = PickTestKey(platform);
+
         return new MerchantPlatformDetailDto(
             platform.Id,
             platform.MerchantId,
@@ -96,11 +99,13 @@ public class MerchantPlatformService
             platform.ReviewedAtUtc,
             platform.ReviewedByUserId,
             reviewerName,
-            platform.ApiKey?.Id,
-            platform.ApiKey is { IsActive: true } ? platform.ApiKey.KeyPrefix : platform.ApiKey?.KeyPrefix,
-            platform.ApiKey?.IsActive == true,
-            platform.ApiKey?.CreatedAtUtc,
-            !string.IsNullOrWhiteSpace(platform.OneTimeApiKey),
+            live?.Id,
+            live is { IsActive: true } ? live.KeyPrefix : live?.KeyPrefix,
+            live?.IsActive == true,
+            live?.CreatedAtUtc,
+            test?.Id,
+            test is { IsActive: true } ? test.KeyPrefix : test?.KeyPrefix,
+            !string.IsNullOrWhiteSpace(platform.OneTimeApiKey) || !string.IsNullOrWhiteSpace(platform.OneTimeTestApiKey),
             paymentsCount,
             paymentsVolume);
     }
@@ -141,7 +146,7 @@ public class MerchantPlatformService
     public async Task<MerchantPlatformDto> UpdateAsync(Guid merchantId, Guid platformId, UpdateMerchantPlatformRequest request, CancellationToken ct = default)
     {
         var platform = await _db.MerchantPlatforms
-            .Include(p => p.ApiKey)
+            .Include(p => p.ApiKeys)
             .Include(p => p.Merchant)
             .FirstOrDefaultAsync(p => p.Id == platformId && p.MerchantId == merchantId, ct)
             ?? throw new InvalidOperationException("المنصة غير موجودة");
@@ -186,12 +191,16 @@ public class MerchantPlatformService
             platform.AdminNotes = domainChanged
                 ? "أُعيد الطلب للمراجعة بسبب تعديل الدومين/الاسم"
                 : "أُعيد الطلب للمراجعة بسبب تعديل بيانات المنصة";
-            if (platform.ApiKey != null)
+            if (platform.ApiKeys.Count > 0)
             {
-                platform.ApiKey.IsActive = false;
-                platform.ApiKey.UpdatedAtUtc = DateTime.UtcNow;
+                foreach (var key in platform.ApiKeys)
+                {
+                    key.IsActive = false;
+                    key.UpdatedAtUtc = DateTime.UtcNow;
+                }
             }
             platform.OneTimeApiKey = null;
+            platform.OneTimeTestApiKey = null;
         }
         else if (platform.Status == PlatformStatus.Pending)
         {
@@ -219,7 +228,7 @@ public class MerchantPlatformService
     public async Task<MerchantPlatformDto> ReviewAsync(Guid platformId, Guid adminUserId, ReviewMerchantPlatformRequest request, CancellationToken ct = default)
     {
         var platform = await _db.MerchantPlatforms
-            .Include(p => p.ApiKey)
+            .Include(p => p.ApiKeys)
             .Include(p => p.Merchant)
             .FirstOrDefaultAsync(p => p.Id == platformId, ct)
             ?? throw new InvalidOperationException("المنصة غير موجودة");
@@ -233,7 +242,7 @@ public class MerchantPlatformService
         if (action is "approve" or "approved")
         {
             platform.Status = PlatformStatus.Approved;
-            var plain = await IssueKeyAsync(platform, ct);
+            var (livePlain, testPlain) = await IssueKeysAsync(platform, ct);
 
             // Disable legacy unbound keys for this merchant
             var legacy = await _db.ApiKeys
@@ -250,23 +259,20 @@ public class MerchantPlatformService
                 platform.MerchantId,
                 NotificationTypes.PlatformApproved,
                 "تم اعتماد المنصة",
-                $"تم اعتماد منصة «{platform.Name}» ({platform.Domain}) وإصدار مفتاح API.",
+                $"تم اعتماد منصة «{platform.Name}» ({platform.Domain}) وإصدار مفتاحي API (live + test).",
                 "/merchant/platforms",
                 new { platformId = platform.Id, status = platform.Status.ToString() },
                 ct);
             var dto = Map(platform, includeMerchantName: true);
-            return dto with { OneTimeApiKey = plain, HasOneTimeApiKey = true };
+            return dto with { OneTimeApiKey = livePlain, OneTimeTestApiKey = testPlain, HasOneTimeApiKey = true };
         }
 
         if (action is "reject" or "rejected")
         {
             platform.Status = PlatformStatus.Rejected;
-            if (platform.ApiKey != null)
-            {
-                platform.ApiKey.IsActive = false;
-                platform.ApiKey.UpdatedAtUtc = DateTime.UtcNow;
-            }
+            DeactivatePlatformKeys(platform);
             platform.OneTimeApiKey = null;
+            platform.OneTimeTestApiKey = null;
             await _db.SaveChangesAsync(ct);
             await _notifications.NotifyMerchantUsersSafeAsync(
                 platform.MerchantId,
@@ -282,12 +288,9 @@ public class MerchantPlatformService
         if (action is "suspend" or "suspended")
         {
             platform.Status = PlatformStatus.Suspended;
-            if (platform.ApiKey != null)
-            {
-                platform.ApiKey.IsActive = false;
-                platform.ApiKey.UpdatedAtUtc = DateTime.UtcNow;
-            }
+            DeactivatePlatformKeys(platform);
             platform.OneTimeApiKey = null;
+            platform.OneTimeTestApiKey = null;
             await _db.SaveChangesAsync(ct);
             await _notifications.NotifyMerchantUsersSafeAsync(
                 platform.MerchantId,
@@ -306,17 +309,17 @@ public class MerchantPlatformService
     public async Task<MerchantPlatformDto> RegenerateKeyAsync(Guid merchantId, Guid platformId, CancellationToken ct = default)
     {
         var platform = await _db.MerchantPlatforms
-            .Include(p => p.ApiKey)
+            .Include(p => p.ApiKeys)
             .FirstOrDefaultAsync(p => p.Id == platformId && p.MerchantId == merchantId, ct)
             ?? throw new InvalidOperationException("المنصة غير موجودة");
 
         if (platform.Status != PlatformStatus.Approved)
             throw new InvalidOperationException("يمكن توليد المفتاح للمنصات المعتمدة فقط");
 
-        var plain = await IssueKeyAsync(platform, ct);
+        var (livePlain, testPlain) = await IssueKeysAsync(platform, ct);
         await _db.SaveChangesAsync(ct);
         var dto = Map(platform);
-        return dto with { OneTimeApiKey = plain, HasOneTimeApiKey = true };
+        return dto with { OneTimeApiKey = livePlain, OneTimeTestApiKey = testPlain, HasOneTimeApiKey = true };
     }
 
     public async Task<MerchantPlatformDto> SetLogoAsync(
@@ -326,7 +329,7 @@ public class MerchantPlatformService
         CancellationToken ct = default)
     {
         var platform = await _db.MerchantPlatforms
-            .Include(p => p.ApiKey)
+            .Include(p => p.ApiKeys)
             .FirstOrDefaultAsync(p => p.Id == platformId && p.MerchantId == merchantId, ct)
             ?? throw new InvalidOperationException("المنصة غير موجودة");
 
@@ -339,7 +342,7 @@ public class MerchantPlatformService
     public async Task<MerchantPlatformDto> ClearLogoAsync(Guid merchantId, Guid platformId, CancellationToken ct = default)
     {
         var platform = await _db.MerchantPlatforms
-            .Include(p => p.ApiKey)
+            .Include(p => p.ApiKeys)
             .FirstOrDefaultAsync(p => p.Id == platformId && p.MerchantId == merchantId, ct)
             ?? throw new InvalidOperationException("المنصة غير موجودة");
 
@@ -349,20 +352,30 @@ public class MerchantPlatformService
         return Map(platform);
     }
 
-    public async Task<string> ClaimKeyAsync(Guid merchantId, Guid platformId, CancellationToken ct = default)
+    public async Task<(string LiveKey, string? TestKey)> ClaimKeysAsync(Guid merchantId, Guid platformId, CancellationToken ct = default)
     {
         var platform = await _db.MerchantPlatforms
             .FirstOrDefaultAsync(p => p.Id == platformId && p.MerchantId == merchantId, ct)
             ?? throw new InvalidOperationException("المنصة غير موجودة");
 
-        if (string.IsNullOrWhiteSpace(platform.OneTimeApiKey))
+        if (string.IsNullOrWhiteSpace(platform.OneTimeApiKey) && string.IsNullOrWhiteSpace(platform.OneTimeTestApiKey))
             throw new InvalidOperationException("لا يوجد مفتاح جاهز للاستلام. أعد توليد المفتاح إن لزم.");
 
-        var key = _protector.Unprotect(platform.OneTimeApiKey);
+        var live = string.IsNullOrWhiteSpace(platform.OneTimeApiKey) ? "" : _protector.Unprotect(platform.OneTimeApiKey);
+        var test = string.IsNullOrWhiteSpace(platform.OneTimeTestApiKey) ? null : _protector.Unprotect(platform.OneTimeTestApiKey);
         platform.OneTimeApiKey = null;
+        platform.OneTimeTestApiKey = null;
         platform.UpdatedAtUtc = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
-        return key;
+        return (live, test);
+    }
+
+    public async Task<string> ClaimKeyAsync(Guid merchantId, Guid platformId, CancellationToken ct = default)
+    {
+        var (live, _) = await ClaimKeysAsync(merchantId, platformId, ct);
+        if (string.IsNullOrWhiteSpace(live))
+            throw new InvalidOperationException("لا يوجد مفتاح جاهز للاستلام. أعد توليد المفتاح إن لزم.");
+        return live;
     }
 
     public async Task<IReadOnlyList<string>> GetApprovedDomainsAsync(CancellationToken ct = default)
@@ -374,48 +387,91 @@ public class MerchantPlatformService
             .ToListAsync(ct);
     }
 
-    private Task<string> IssueKeyAsync(MerchantPlatform platform, CancellationToken ct)
+    private Task<(string LivePlain, string TestPlain)> IssueKeysAsync(MerchantPlatform platform, CancellationToken ct)
     {
-        if (platform.ApiKey != null)
+        foreach (var existing in platform.ApiKeys.ToList())
         {
-            platform.ApiKey.IsActive = false;
-            platform.ApiKey.MerchantPlatformId = null;
-            platform.ApiKey.UpdatedAtUtc = DateTime.UtcNow;
-            platform.ApiKey = null;
+            existing.IsActive = false;
+            existing.MerchantPlatformId = null;
+            existing.UpdatedAtUtc = DateTime.UtcNow;
         }
+        platform.ApiKeys.Clear();
 
-        var (plain, prefix, hash) = _apiKeys.Generate();
-        var entity = new ApiKey
+        var (livePlain, livePrefix, liveHash) = _apiKeys.Generate(isTest: false);
+        var live = new ApiKey
         {
             MerchantId = platform.MerchantId,
             MerchantPlatformId = platform.Id,
-            Name = $"Platform:{platform.Name}",
-            KeyPrefix = prefix,
-            KeyHash = hash,
-            IsActive = true
+            Name = $"Platform:{platform.Name}:live",
+            KeyPrefix = livePrefix,
+            KeyHash = liveHash,
+            IsActive = true,
+            IsTest = false
         };
-        _db.ApiKeys.Add(entity);
-        platform.ApiKey = entity;
-        platform.OneTimeApiKey = _protector.Protect(plain);
-        return Task.FromResult(plain);
+
+        var (testPlain, testPrefix, testHash) = _apiKeys.Generate(isTest: true);
+        var test = new ApiKey
+        {
+            MerchantId = platform.MerchantId,
+            MerchantPlatformId = platform.Id,
+            Name = $"Platform:{platform.Name}:test",
+            KeyPrefix = testPrefix,
+            KeyHash = testHash,
+            IsActive = true,
+            IsTest = true
+        };
+
+        _db.ApiKeys.Add(live);
+        _db.ApiKeys.Add(test);
+        platform.ApiKeys.Add(live);
+        platform.ApiKeys.Add(test);
+        platform.OneTimeApiKey = _protector.Protect(livePlain);
+        platform.OneTimeTestApiKey = _protector.Protect(testPlain);
+        return Task.FromResult((livePlain, testPlain));
     }
 
-    private static MerchantPlatformDto Map(MerchantPlatform p, bool includeMerchantName = false) => new(
-        p.Id,
-        p.MerchantId,
-        includeMerchantName ? p.Merchant?.BusinessName : null,
-        p.Name,
-        p.Domain,
-        p.LogoUrl,
-        p.Status.ToString(),
-        p.AdminNotes,
-        p.CreatedAtUtc,
-        p.UpdatedAtUtc,
-        p.ReviewedAtUtc,
-        p.ApiKey?.Id,
-        p.ApiKey is { IsActive: true } ? p.ApiKey.KeyPrefix : null,
-        !string.IsNullOrWhiteSpace(p.OneTimeApiKey),
-        null);
+    private static void DeactivatePlatformKeys(MerchantPlatform platform)
+    {
+        foreach (var key in platform.ApiKeys)
+        {
+            key.IsActive = false;
+            key.UpdatedAtUtc = DateTime.UtcNow;
+        }
+    }
+
+    private static ApiKey? PickLiveKey(MerchantPlatform p) =>
+        p.ApiKeys?.FirstOrDefault(k => k.IsActive && !k.IsTest)
+        ?? p.ApiKeys?.FirstOrDefault(k => !k.IsTest)
+        ?? p.ApiKeys?.FirstOrDefault(k => k.IsActive && !k.KeyPrefix.StartsWith("fx_test_", StringComparison.OrdinalIgnoreCase));
+
+    private static ApiKey? PickTestKey(MerchantPlatform p) =>
+        p.ApiKeys?.FirstOrDefault(k => k.IsActive && k.IsTest)
+        ?? p.ApiKeys?.FirstOrDefault(k => k.IsTest);
+
+    private static MerchantPlatformDto Map(MerchantPlatform p, bool includeMerchantName = false)
+    {
+        var live = PickLiveKey(p);
+        var test = PickTestKey(p);
+        return new(
+            p.Id,
+            p.MerchantId,
+            includeMerchantName ? p.Merchant?.BusinessName : null,
+            p.Name,
+            p.Domain,
+            p.LogoUrl,
+            p.Status.ToString(),
+            p.AdminNotes,
+            p.CreatedAtUtc,
+            p.UpdatedAtUtc,
+            p.ReviewedAtUtc,
+            live?.Id,
+            live is { IsActive: true } ? live.KeyPrefix : null,
+            test?.Id,
+            test is { IsActive: true } ? test.KeyPrefix : null,
+            !string.IsNullOrWhiteSpace(p.OneTimeApiKey) || !string.IsNullOrWhiteSpace(p.OneTimeTestApiKey),
+            null,
+            null);
+    }
 
     public static string NormalizeDomain(string? input)
     {

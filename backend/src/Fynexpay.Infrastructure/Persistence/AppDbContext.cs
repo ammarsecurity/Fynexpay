@@ -39,6 +39,11 @@ public class AppDbContext : DbContext, IAppDbContext
         {
             e.Property(x => x.BusinessName).HasMaxLength(200);
             e.Property(x => x.CommissionPercent).HasPrecision(5, 2);
+            e.Property(x => x.FibCommissionPercent).HasPrecision(5, 2);
+            e.Property(x => x.ZainCashCommissionPercent).HasPrecision(5, 2);
+            e.Property(x => x.QiCommissionPercent).HasPrecision(5, 2);
+            e.Property(x => x.SuperQiCommissionPercent).HasPrecision(5, 2);
+            e.Property(x => x.AlqasehCommissionPercent).HasPrecision(5, 2);
             e.Property(x => x.WebhookSecret).HasMaxLength(128);
             e.HasOne(x => x.Wallet).WithOne(w => w.Merchant).HasForeignKey<Wallet>(w => w.MerchantId);
         });
@@ -50,6 +55,7 @@ public class AppDbContext : DbContext, IAppDbContext
             e.Property(x => x.LogoUrl).HasMaxLength(500);
             e.Property(x => x.AdminNotes).HasMaxLength(1000);
             e.Property(x => x.OneTimeApiKey).HasColumnType("longtext");
+            e.Property(x => x.OneTimeTestApiKey).HasColumnType("longtext");
             e.HasIndex(x => new { x.MerchantId, x.Domain }).IsUnique();
             e.HasOne(x => x.Merchant).WithMany(m => m.Platforms).HasForeignKey(x => x.MerchantId).OnDelete(DeleteBehavior.Cascade);
         });
@@ -59,8 +65,8 @@ public class AppDbContext : DbContext, IAppDbContext
             e.HasIndex(x => x.KeyPrefix);
             e.Property(x => x.KeyPrefix).HasMaxLength(16);
             e.Property(x => x.KeyHash).HasMaxLength(128);
-            e.HasOne(x => x.MerchantPlatform).WithOne(p => p.ApiKey)
-                .HasForeignKey<ApiKey>(x => x.MerchantPlatformId)
+            e.HasOne(x => x.MerchantPlatform).WithMany(p => p.ApiKeys)
+                .HasForeignKey(x => x.MerchantPlatformId)
                 .OnDelete(DeleteBehavior.SetNull);
         });
 

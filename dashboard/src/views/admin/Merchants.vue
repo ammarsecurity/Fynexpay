@@ -19,7 +19,7 @@
             <th>{{ $t('merchants.business') }}</th>
             <th>{{ $t('merchants.email') }}</th>
             <th>{{ $t('common.status') }}</th>
-            <th>{{ $t('merchants.commission') }}</th>
+            <th>{{ $t('merchants.commissions') }}</th>
             <th>{{ $t('merchants.balance') }}</th>
             <th>{{ $t('common.actions') }}</th>
           </tr>
@@ -30,16 +30,17 @@
             <td>{{ m.contactEmail }}</td>
             <td><span class="badge" :class="m.status === 'Active' ? 'ok' : 'warn'">{{ $t(`status.${m.status}`, m.status) }}</span></td>
             <td>
-              <label class="commission-cell">
-                <input class="input-compact" type="number" step="0.1" min="0" max="100" v-model.number="m.commissionPercent" />
-                <span class="suffix">%</span>
-              </label>
+              <div class="comm-chips">
+                <span v-for="c in commissionChips(m)" :key="c.key" class="comm-chip">
+                  <ProviderBadge :provider="c.provider" :show-name="false" size="sm" />
+                  {{ formatPct(c.rate) }}%
+                </span>
+              </div>
             </td>
             <td>{{ format(m.availableBalance) }}</td>
             <td class="row">
               <button class="btn secondary" @click="openDetails(m)">{{ $t('merchants.allDetails') }}</button>
               <button class="btn" @click="save(m, 'Active')">{{ $t('merchants.activate') }}</button>
-              <button class="btn secondary" @click="save(m)">{{ $t('merchants.saveCommission') }}</button>
               <button class="btn danger" @click="save(m, 'Suspended')">{{ $t('merchants.suspend') }}</button>
             </td>
           </tr>
@@ -70,6 +71,7 @@ import { api } from '../../api'
 import DataToolbar from '../../components/DataToolbar.vue'
 import MerchantDetailsModal from '../../components/MerchantDetailsModal.vue'
 import PaginationBar from '../../components/PaginationBar.vue'
+import ProviderBadge from '../../components/ProviderBadge.vue'
 
 const { locale } = useI18n()
 const merchants = ref([])
@@ -115,13 +117,48 @@ function openDetails(m) {
   selectedId.value = m.id
 }
 
+function formatPct(v) {
+  const n = Number(v ?? 0)
+  return Number.isInteger(n) ? String(n) : n.toFixed(1)
+}
+
+function commissionChips(m) {
+  return [
+    { key: 'fib', provider: 'Fib', rate: m.fibCommissionPercent ?? m.commissionPercent },
+    { key: 'zain', provider: 'ZainCash', rate: m.zainCashCommissionPercent ?? m.commissionPercent },
+    { key: 'qi', provider: 'Qi', rate: m.qiCommissionPercent ?? m.commissionPercent },
+    { key: 'sq', provider: 'SuperQi', rate: m.superQiCommissionPercent ?? m.commissionPercent },
+    { key: 'aq', provider: 'Alqaseh', rate: m.alqasehCommissionPercent ?? m.commissionPercent }
+  ]
+}
+
 async function save(m, status) {
   await api.patch(`/api/admin/merchants/${m.id}`, {
-    status: status || undefined,
-    commissionPercent: m.commissionPercent
+    status: status || undefined
   })
   await load()
 }
 
 onMounted(load)
 </script>
+
+<style scoped>
+.comm-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 320px;
+}
+.comm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: var(--brand);
+  white-space: nowrap;
+}
+</style>

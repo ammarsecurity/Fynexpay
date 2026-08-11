@@ -148,7 +148,7 @@ onUnmounted(() => {
   transition: background 0.12s ease;
 }
 .notif-list li:hover { background: #f8fafc; }
-.notif-list li.unread { background: rgba(108, 60, 236, 0.04); }
+.notif-list li.unread { background: rgba(3, 24, 56, 0.04); }
 .dot {
   width: 8px;
   height: 8px;

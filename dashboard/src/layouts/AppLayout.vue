@@ -1,12 +1,19 @@
 <template>
-  <div class="app-shell">
-    <aside class="sidebar">
-      <RouterLink to="/" class="brand-row" aria-label="Fynexpay">
-        <img src="/full-logo.png" alt="Fynexpay" class="brand-logo" />
-      </RouterLink>
+  <div class="app-shell" :class="{ 'nav-open': navOpen }">
+    <div class="sidebar-backdrop" v-if="navOpen" @click="navOpen = false" />
+
+    <aside class="sidebar" :class="{ open: navOpen }">
+      <div class="sidebar-top">
+        <RouterLink to="/" class="brand-row" aria-label="Fynexpay" @click="closeNav">
+          <img src="/full-logo.png" alt="Fynexpay" class="brand-logo" />
+        </RouterLink>
+        <button class="sidebar-close" type="button" @click="closeNav" :aria-label="$t('common.close')">
+          ✕
+        </button>
+      </div>
 
       <div class="nav-label">{{ $t('common.menu') }}</div>
-      <nav class="nav" v-if="auth.isMerchant">
+      <nav class="nav" v-if="auth.isMerchant" @click="onNavClick">
         <RouterLink to="/merchant">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z"/></svg>
           {{ $t('nav.overview') }}
@@ -41,7 +48,7 @@
         </RouterLink>
       </nav>
 
-      <nav class="nav" v-if="auth.isAdmin">
+      <nav class="nav" v-if="auth.isAdmin" @click="onNavClick">
         <RouterLink to="/admin">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z"/></svg>
           {{ $t('nav.admin') }}
@@ -83,16 +90,16 @@
         <p>{{ $t('nav.upgradeBody') }}</p>
         <ul>
           <li>Hosted Checkout</li>
-          <li>QI / SuperQi / ZainCash</li>
+          <li>{{ $t('nav.upgradeMethods') }}</li>
           <li>Signed Webhooks</li>
         </ul>
-        <RouterLink class="btn" to="/merchant/test">{{ $t('nav.tryPayment') }}</RouterLink>
+        <RouterLink class="btn" to="/merchant/test" @click="closeNav">{{ $t('nav.tryPayment') }}</RouterLink>
       </div>
 
       <div class="upgrade-card" v-else>
         <h4>{{ $t('nav.controlTitle') }}</h4>
         <p>{{ $t('nav.controlBody') }}</p>
-        <RouterLink class="btn" to="/admin/providers">{{ $t('nav.setupProviders') }}</RouterLink>
+        <RouterLink class="btn" to="/admin/providers" @click="closeNav">{{ $t('nav.setupProviders') }}</RouterLink>
       </div>
 
       <div class="user-chip">
@@ -102,11 +109,14 @@
           <div class="email">{{ auth.user?.email }}</div>
         </div>
       </div>
-      <button class="btn secondary" style="margin-top:10px;width:100%;justify-content:center" @click="logout">{{ $t('common.logout') }}</button>
+      <button class="btn secondary logout-btn" type="button" @click="logout">{{ $t('common.logout') }}</button>
     </aside>
 
     <div class="content-col">
       <header class="topbar">
+        <button class="menu-btn" type="button" @click="navOpen = true" :aria-label="$t('common.menu')">
+          <span /><span /><span />
+        </button>
         <div class="search-box">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
           <input v-model="q" type="search" :placeholder="$t('nav.searchPlaceholder')" />
@@ -115,8 +125,14 @@
         <div class="top-actions">
           <LangSwitch />
           <NotificationBell />
-          <RouterLink v-if="auth.isMerchant" class="btn" to="/merchant/test">{{ $t('nav.newPayment') }}</RouterLink>
-          <RouterLink v-else class="btn" to="/admin/merchants">{{ $t('nav.manageMerchants') }}</RouterLink>
+          <RouterLink v-if="auth.isMerchant" class="btn top-cta" to="/merchant/test">
+            <span class="full">{{ $t('nav.newPayment') }}</span>
+            <span class="short">+</span>
+          </RouterLink>
+          <RouterLink v-else class="btn top-cta" to="/admin/merchants">
+            <span class="full">{{ $t('nav.manageMerchants') }}</span>
+            <span class="short">+</span>
+          </RouterLink>
         </div>
       </header>
       <main class="main">
@@ -127,23 +143,42 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import LangSwitch from '../components/LangSwitch.vue'
 import NotificationBell from '../components/NotificationBell.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 const q = ref('')
+const navOpen = ref(false)
 
 const initials = computed(() => {
   const n = auth.user?.fullName || 'F'
   return n.trim().split(/\s+/).slice(0, 2).map((p) => p[0]).join('').toUpperCase()
 })
 
+function closeNav() {
+  navOpen.value = false
+}
+
+function onNavClick(e) {
+  if (e.target?.closest('a')) closeNav()
+}
+
 function logout() {
   auth.logout()
+  closeNav()
   router.push('/login')
 }
+
+watch(() => route.fullPath, closeNav)
+watch(navOpen, (v) => {
+  document.body.style.overflow = v ? 'hidden' : ''
+})
+onUnmounted(() => {
+  document.body.style.overflow = ''
+})
 </script>

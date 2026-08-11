@@ -2,8 +2,10 @@
   <div class="tester">
     <header class="hero">
       <div class="hero-text">
+        <span class="sandbox-pill">{{ $t('testPay.sandboxBadge') }}</span>
         <h1>{{ $t('testPay.title') }}</h1>
         <p>{{ $t('testPay.subtitle') }}</p>
+        <p class="sandbox-hint">{{ $t('testPay.sandboxHint') }}</p>
       </div>
       <div class="hero-actions">
         <RouterLink class="btn secondary" to="/merchant/platforms">{{ $t('nav.platforms') }}</RouterLink>
@@ -62,8 +64,8 @@
               <strong>{{ selectedPlatform.name }}</strong>
               <span class="mono" dir="ltr">{{ selectedPlatform.domain }}</span>
             </div>
-            <span v-if="selectedPlatform.apiKeyPrefix" class="mono key-pill" dir="ltr">
-              {{ selectedPlatform.apiKeyPrefix }}••••
+            <span v-if="selectedPlatform.testApiKeyPrefix || selectedPlatform.apiKeyPrefix" class="mono key-pill" dir="ltr">
+              {{ selectedPlatform.testApiKeyPrefix || selectedPlatform.apiKeyPrefix }}••••
             </span>
           </div>
 
@@ -269,8 +271,8 @@ const origin = computed(() => {
   return d.startsWith('localhost') || d.startsWith('127.0.0.1') ? `http://${d}` : `https://${d}`
 })
 const apiKeyPlaceholder = computed(() => {
-  const prefix = selectedPlatform.value?.apiKeyPrefix
-  return prefix ? `${prefix}…YOUR_FULL_KEY` : 'YOUR_API_KEY'
+  const prefix = selectedPlatform.value?.testApiKeyPrefix || selectedPlatform.value?.apiKeyPrefix
+  return prefix ? `${prefix}…YOUR_FULL_KEY` : 'fx_test_YOUR_FULL_KEY'
 })
 const amount = computed(() => Number(form.amount) > 0 ? Number(form.amount) : 5000)
 const serviceType = computed(() => (form.serviceType || t('testPay.serviceDefault')).trim())
@@ -501,7 +503,7 @@ onUnmounted(() => {
   padding: 22px 24px;
   border-radius: 22px;
   background:
-    radial-gradient(720px 220px at 100% 0%, rgba(108, 60, 236, 0.16), transparent 55%),
+    radial-gradient(720px 220px at 100% 0%, rgba(3, 24, 56, 0.16), transparent 55%),
     linear-gradient(135deg, #031838 0%, #0a2a5c 55%, #1a1460 100%);
   color: #fff;
   box-shadow: var(--shadow);
@@ -511,6 +513,22 @@ onUnmounted(() => {
   font-size: clamp(1.4rem, 2vw, 1.85rem);
   font-weight: 800;
   letter-spacing: -0.02em;
+}
+.sandbox-pill {
+  display: inline-flex;
+  margin-bottom: 10px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+.sandbox-hint {
+  margin: 8px 0 0 !important;
+  color: rgba(255, 255, 255, 0.88) !important;
+  font-weight: 600;
+  font-size: 0.9rem !important;
 }
 .hero-text p {
   margin: 8px 0 0;
@@ -552,7 +570,8 @@ onUnmounted(() => {
   border-radius: 999px;
   display: grid;
   place-items: center;
-  background: #6c3cec;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
   font-size: 0.75rem;
   flex-shrink: 0;
 }
@@ -619,8 +638,8 @@ onUnmounted(() => {
   color: var(--ink);
 }
 .field input:focus, .field select:focus {
-  border-color: rgba(108, 60, 236, 0.55);
-  box-shadow: 0 0 0 4px rgba(108, 60, 236, 0.14);
+  border-color: rgba(3, 24, 56, 0.55);
+  box-shadow: 0 0 0 4px rgba(3, 24, 56, 0.14);
 }
 .field-grid {
   display: grid;
@@ -693,7 +712,7 @@ onUnmounted(() => {
 
 .preview-panel {
   background:
-    radial-gradient(500px 180px at 100% 0%, rgba(108, 60, 236, 0.08), transparent 55%),
+    radial-gradient(500px 180px at 100% 0%, rgba(3, 24, 56, 0.08), transparent 55%),
     #fff;
   display: flex;
   flex-direction: column;
@@ -707,7 +726,7 @@ onUnmounted(() => {
 .receipt-hero {
   padding: 22px 20px;
   border-radius: 18px;
-  background: linear-gradient(145deg, #031838, #1b1464 70%, #6c3cec);
+  background: linear-gradient(145deg, #031838, #05204a 70%, #031838);
   color: #fff;
   display: grid;
   gap: 4px;

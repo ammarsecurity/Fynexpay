@@ -86,9 +86,15 @@ public class ApiKeyAuthenticationMiddleware
         match.LastUsedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(context.RequestAborted);
 
+        // Legacy fx_ keys (without live/test prefix) default to live/production.
+        var isTest = match.IsTest
+                     || match.KeyPrefix.StartsWith("fx_test_", StringComparison.OrdinalIgnoreCase)
+                     || plain.StartsWith("fx_test_", StringComparison.OrdinalIgnoreCase);
+
         context.Items["MerchantId"] = match.MerchantId;
         context.Items["ApiKeyId"] = match.Id;
         context.Items["MerchantPlatformId"] = match.MerchantPlatformId.Value;
+        context.Items["ApiKeyIsTest"] = isTest;
         await _next(context);
     }
 }

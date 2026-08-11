@@ -38,6 +38,8 @@ public class LandingContentService
         var content = JsonSerializer.Deserialize<LandingContentDto>(row.Value, JsonOpts)
                       ?? LandingDefaults.Create();
         content = MergeWithDefaults(content);
+        if (ScrubProviderBrandNames(content))
+            await PersistAsync(content, ct);
         _cache = content;
         return Clone(content);
     }
@@ -45,6 +47,7 @@ public class LandingContentService
     public async Task<LandingContentDto> SaveAsync(LandingContentDto content, CancellationToken ct = default)
     {
         content = MergeWithDefaults(content);
+        ScrubProviderBrandNames(content);
         await PersistAsync(content, ct);
         _cache = content;
         return Clone(content);
@@ -136,10 +139,74 @@ public class LandingContentService
 
         if (src.Features == null || src.Features.Count == 0)
             src.Features = fallback.Features.Select(f => new LandingFeatureDto { Icon = f.Icon, Title = f.Title, Body = f.Body }).ToList();
-        if (src.ProviderPills == null || src.ProviderPills.Count == 0)
-            src.ProviderPills = [.. fallback.ProviderPills];
+        src.ProviderPills ??= [];
 
         return src;
+    }
+
+    /// <summary>
+    /// Strip hardcoded PSP brand names from marketing copy (logos are shown instead).
+    /// </summary>
+    private static bool ScrubProviderBrandNames(LandingContentDto content)
+    {
+        var changed = false;
+        var defaults = LandingDefaults.Create();
+        changed |= ScrubLocale(content.Ar, defaults.Ar);
+        changed |= ScrubLocale(content.En, defaults.En);
+        return changed;
+    }
+
+    private static bool ScrubLocale(LandingLocaleDto src, LandingLocaleDto fallback)
+    {
+        var changed = false;
+        if (ContainsProviderBrand(src.Badge)) { src.Badge = fallback.Badge; changed = true; }
+        if (ContainsProviderBrand(src.HeroSubtitle)) { src.HeroSubtitle = fallback.HeroSubtitle; changed = true; }
+        if (ContainsProviderBrand(src.ProvidersTitle)) { src.ProvidersTitle = fallback.ProvidersTitle; changed = true; }
+        if (ContainsProviderBrand(src.ProvidersSubtitle)) { src.ProvidersSubtitle = fallback.ProvidersSubtitle; changed = true; }
+        if (ContainsProviderBrand(src.ApiSubtitle)) { src.ApiSubtitle = fallback.ApiSubtitle; changed = true; }
+        if (ContainsProviderBrand(src.NavProviders)) { src.NavProviders = fallback.NavProviders; changed = true; }
+        if (ContainsProviderBrand(src.ProvidersEyebrow)) { src.ProvidersEyebrow = fallback.ProvidersEyebrow; changed = true; }
+        if (ContainsProviderBrand(src.MockChooseProvider)) { src.MockChooseProvider = fallback.MockChooseProvider; changed = true; }
+
+        if (src.ProviderPills != null && src.ProviderPills.Any(ContainsProviderBrand))
+        {
+            src.ProviderPills = [];
+            changed = true;
+        }
+
+        if (src.Features != null)
+        {
+            for (var i = 0; i < src.Features.Count; i++)
+            {
+                var f = src.Features[i];
+                if (!ContainsProviderBrand(f.Title) && !ContainsProviderBrand(f.Body) && !ContainsProviderBrand(f.Icon))
+                    continue;
+                var fb = i < fallback.Features.Count ? fallback.Features[i] : null;
+                if (fb == null) continue;
+                f.Icon = fb.Icon;
+                f.Title = fb.Title;
+                f.Body = fb.Body;
+                changed = true;
+            }
+        }
+
+        return changed;
+    }
+
+    private static bool ContainsProviderBrand(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        return text.Contains("ZainCash", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("Zain Cash", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("SuperQi", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("Alqaseh", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("Al Qaseh", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("القصّة", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("القصة", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("QI Gate", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("FIB Web", StringComparison.OrdinalIgnoreCase)
+               || System.Text.RegularExpressions.Regex.IsMatch(text, @"\bFIB\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+               || System.Text.RegularExpressions.Regex.IsMatch(text, @"\bQI\b");
     }
 
     private static string Pick(string? value, string fallback) =>

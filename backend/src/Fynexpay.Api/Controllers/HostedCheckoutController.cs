@@ -42,6 +42,13 @@ public class HostedCheckoutController : ControllerBase
     public async Task<IActionResult> Page(Guid paymentId, CancellationToken ct)
     {
         var lang = ResolveLang();
+
+        if (await _payments.TryPurgeExpiredIncompleteCheckoutAsync(paymentId, ct))
+            return Content(Render(T(lang, "انتهت الجلسة", "Session expired"), EmptyState(
+                T(lang, "انتهت صلاحية رابط الدفع (ساعة واحدة) وتم إغلاق الجلسة ومسحها لأن العملية لم تُكتمل.",
+                  "This payment link expired after one hour and the session was closed because checkout was not completed."),
+                lang), null, lang), "text/html; charset=utf-8");
+
         var payment = await _db.Payments.AsNoTracking()
             .Include(p => p.Merchant)
             .Include(p => p.MerchantPlatform)
@@ -51,17 +58,17 @@ public class HostedCheckoutController : ControllerBase
             return Content(Render(T(lang, "دفعة غير موجودة", "Payment not found"), EmptyState(T(lang, "لم يتم العثور على رابط الدفع.", "Payment link was not found."), lang), null, lang), "text/html; charset=utf-8");
 
         if (payment.Status == PaymentStatus.Paid)
-            return Content(Render(T(lang, "تم الدفع", "Paid"), Shell(payment, ReturnState(payment, success: true, autoRedirect: false, lang), false, lang), "Paid", lang), "text/html; charset=utf-8");
+            return Content(Render(T(lang, "تم الدفع", "Paid"), Shell(payment, ReturnState(payment, success: true, autoRedirect: false, lang, await _providerSettings.GetAsync(ct)), false, lang), "Paid", lang), "text/html; charset=utf-8");
 
         if (payment.Status is PaymentStatus.Failed or PaymentStatus.Declined or PaymentStatus.Cancelled or PaymentStatus.Expired)
-            return Content(Render(T(lang, "فشل الدفع", "Payment failed"), Shell(payment, ReturnState(payment, success: false, autoRedirect: false, lang), false, lang), payment.Status.ToString(), lang), "text/html; charset=utf-8");
+            return Content(Render(T(lang, "فشل الدفع", "Payment failed"), Shell(payment, ReturnState(payment, success: false, autoRedirect: false, lang, await _providerSettings.GetAsync(ct)), false, lang), payment.Status.ToString(), lang), "text/html; charset=utf-8");
 
         if (payment.Provider != PaymentProviderType.Auto && !string.IsNullOrWhiteSpace(payment.ProviderCheckoutUrl))
         {
             var cont = $"""
                 <div class="state">
                   <div class="icon soft">→</div>
-                  <h2>{T(lang, $"متابعة الدفع عبر {H(DisplayName(payment.Provider))}", $"Continue with {H(DisplayName(payment.Provider))}")}</h2>
+                  <h2>{T(lang, "متابعة الدفع", "Continue payment")}</h2>
                   <p class="muted">{T(lang, "تم تجهيز بوابة الدفع. أكمل العملية للانتهاء.", "Your payment gateway is ready. Continue to finish.")}</p>
                   <a class="btn" href="{H(payment.ProviderCheckoutUrl)}">{T(lang, "متابعة الدفع", "Continue payment")}</a>
                 </div>
@@ -101,9 +108,10 @@ public class HostedCheckoutController : ControllerBase
         foreach (var p in providers)
         {
             var logo = LogoUrl(settings, p);
+            var pname = DisplayName(settings, p);
             var logoHtml = string.IsNullOrWhiteSpace(logo)
-                ? $"<span class=\"p-fallback\">{H(DisplayName(p)[..1])}</span>"
-                : $"<img class=\"p-logo\" src=\"{H(logo)}\" alt=\"{H(DisplayName(p))}\" />";
+                ? $"<span class=\"p-fallback\">{H((pname.Length > 0 ? pname : "P")[..1])}</span>"
+                : $"<img class=\"p-logo\" src=\"{H(logo)}\" alt=\"\" />";
             var choose = T(lang, "اختيار", "Select");
             cards.Append($"""
                 <form method="post" action="/checkout/{paymentId}/pay?lang={lang}">
@@ -111,8 +119,7 @@ public class HostedCheckoutController : ControllerBase
                   <button type="submit" class="provider">
                     <span class="p-logo-wrap">{logoHtml}</span>
                     <span class="p-text">
-                      <span class="p-name">{H(DisplayName(p))}</span>
-                      <span class="p-desc">{H(ProviderHint(p, lang))}</span>
+                      <span class="p-desc">{H(ProviderHint(lang))}</span>
                     </span>
                     <span class="p-go"><span>{choose}</span><i aria-hidden="true">←</i></span>
                   </button>
@@ -129,7 +136,7 @@ public class HostedCheckoutController : ControllerBase
               <div class="choose-head">
                 <h2>{T(lang, "اختر طريقة الدفع", "Choose payment method")}</h2>
                 <p class="muted">
-                  <svg class="shield" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5l8-3z" stroke="#6c3cec" stroke-width="1.8"/><path d="M9.5 12.2l1.8 1.8 3.8-3.8" stroke="#6c3cec" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <svg class="shield" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5l8-3z" stroke="#031838" stroke-width="1.8"/><path d="M9.5 12.2l1.8 1.8 3.8-3.8" stroke="#031838" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                   {T(lang, "ادفع بأمان عبر أحد المزودين المعتمدين", "Pay securely through a trusted provider")}
                 </p>
               </div>
@@ -145,6 +152,12 @@ public class HostedCheckoutController : ControllerBase
     public async Task<IActionResult> ProviderReturn(Guid paymentId, [FromQuery] string? result, CancellationToken ct)
     {
         var lang = ResolveLang();
+
+        if (await _payments.TryPurgeExpiredIncompleteCheckoutAsync(paymentId, ct))
+            return Content(Render(T(lang, "انتهت الجلسة", "Session expired"), EmptyState(
+                T(lang, "انتهت صلاحية رابط الدفع وتم إغلاق الجلسة.", "The payment link expired and the session was closed."),
+                lang), null, lang), "text/html; charset=utf-8");
+
         var payment = await _db.Payments
             .Include(p => p.Merchant)
             .Include(p => p.MerchantPlatform)
@@ -171,7 +184,7 @@ public class HostedCheckoutController : ControllerBase
 
         // Never trust ?result=success — only server-side Paid status counts.
         var success = payment.Status == PaymentStatus.Paid;
-        var html = ReturnState(payment, success: success, autoRedirect: true, lang);
+        var html = ReturnState(payment, success: success, autoRedirect: true, lang, await _providerSettings.GetAsync(ct));
         var title = success ? T(lang, "تم الدفع", "Paid") : T(lang, "نتيجة الدفع", "Payment result");
         return Content(Render(title, Shell(payment, html, false, lang), success ? "Paid" : payment.Status.ToString(), lang), "text/html; charset=utf-8");
     }
@@ -182,6 +195,9 @@ public class HostedCheckoutController : ControllerBase
         var lang = ResolveLang();
         try
         {
+            if (await _payments.TryPurgeExpiredIncompleteCheckoutAsync(paymentId, ct))
+                return Redirect($"/checkout/{paymentId}?lang={lang}");
+
             var result = await _otp.SendCheckoutOtpAsync(paymentId, phone, email, ct);
             var q = $"lang={lang}&step=code&cid={result.ChallengeId}&mask={Uri.EscapeDataString(result.MaskedDestination)}&via={Uri.EscapeDataString(result.Via)}";
             if (!string.IsNullOrWhiteSpace(result.DevCode))
@@ -200,6 +216,9 @@ public class HostedCheckoutController : ControllerBase
         var lang = ResolveLang();
         try
         {
+            if (await _payments.TryPurgeExpiredIncompleteCheckoutAsync(paymentId, ct))
+                return Redirect($"/checkout/{paymentId}?lang={lang}");
+
             await _otp.VerifyCheckoutOtpAsync(paymentId, challengeId, code, ct);
             return Redirect($"/checkout/{paymentId}?lang={lang}");
         }
@@ -215,6 +234,9 @@ public class HostedCheckoutController : ControllerBase
         var lang = ResolveLang();
         try
         {
+            if (await _payments.TryPurgeExpiredIncompleteCheckoutAsync(paymentId, ct))
+                return Redirect($"/checkout/{paymentId}?lang={lang}");
+
             var wa = await _ultramsgSettings.GetAsync(ct);
             if (wa.Enabled && wa.RequireCheckoutOtp && (wa.UsesWhatsApp() || wa.UsesEmail())
                 && !await _otp.IsCheckoutVerifiedAsync(paymentId, ct))
@@ -365,6 +387,51 @@ public class HostedCheckoutController : ControllerBase
         var langLabel = lang == "ar" ? "العربية" : "English";
         var path = Request.Path.Value ?? $"/checkout/{payment.Id}";
         var switchUrl = $"{path}?lang={otherLang}";
+        var deadlineUtc = AsUtc(payment.ExpiredAtUtc ?? payment.CreatedAtUtc.AddHours(1));
+        var expiresMs = new DateTimeOffset(deadlineUtc).ToUnixTimeMilliseconds();
+        var remainingMs = Math.Max(0, (long)(deadlineUtc - DateTime.UtcNow).TotalMilliseconds);
+        var showTimer = payment.Status == PaymentStatus.Pending;
+        var timerHtml = !showTimer ? "" : $"""
+                    <div class="ttl" id="checkoutTtl" data-expires-ms="{expiresMs}" data-payment="{payment.Id:N}">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+                      <span>{T(lang, "ينتهي خلال", "Expires in")}</span>
+                      <strong class="ttl-count ltr" id="checkoutTtlCount">{FormatRemaining(remainingMs)}</strong>
+                    </div>
+                    """;
+        var timerScript = !showTimer ? "" : """
+            <script>
+            (function(){
+              var el = document.getElementById('checkoutTtl');
+              var out = document.getElementById('checkoutTtlCount');
+              if (!el || !out) return;
+              var expires = Number(el.getAttribute('data-expires-ms'));
+              var key = 'fp-checkout-exp-' + (el.getAttribute('data-payment') || '');
+              if (!expires || isNaN(expires)) return;
+              var done = false;
+              function tick(){
+                if (done) return;
+                var ms = expires - Date.now();
+                if (ms <= 0) {
+                  done = true;
+                  out.textContent = '00:00:00';
+                  el.classList.add('expired');
+                  // إعادة تحميل مرة واحدة فقط لإغلاق/مسح الجلسة — بدون حلقة رفرش
+                  if (!sessionStorage.getItem(key)) {
+                    sessionStorage.setItem(key, '1');
+                    setTimeout(function(){ location.reload(); }, 400);
+                  }
+                  return;
+                }
+                var s = Math.floor(ms / 1000);
+                var h = Math.floor(s / 3600); s %= 3600;
+                var m = Math.floor(s / 60); s %= 60;
+                out.textContent = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+                setTimeout(tick, 1000);
+              }
+              tick();
+            })();
+            </script>
+            """;
 
         return $"""
             <div class="page">
@@ -390,7 +457,7 @@ public class HostedCheckoutController : ControllerBase
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5l8-3z" stroke="currentColor" stroke-width="1.8"/><path d="M9.5 12.2l1.8 1.8 3.8-3.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                       {T(lang, "دفع آمن", "Secure payment")}
                     </span>
-                    <span class="currency-badge" aria-hidden="true">$</span>
+                    {timerHtml}
                   </div>
                   <div class="amount-block">
                     <p class="amount-label">{T(lang, "المبلغ المطلوب", "Amount due")}</p>
@@ -431,18 +498,35 @@ public class HostedCheckoutController : ControllerBase
                 <span class="foot-sep" aria-hidden="true"></span>
                 <div class="foot-secure">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 11V8a5 5 0 0 1 10 0v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><rect x="5" y="11" width="14" height="10" rx="2.5" stroke="currentColor" stroke-width="1.8"/></svg>
-                  {T(lang, "جميع البيانات مشفرة وآمنة", "All data is encrypted and secure")}
+                  {T(lang, "جميع البيانات مشفرة وآمنة · الرابط صالح لساعة واحدة", "All data is encrypted and secure · Link valid for 1 hour")}
                 </div>
               </footer>
             </div>
             <script src="/checkout-copy.js"></script>
+            {timerScript}
             """;
+    }
+
+    private static DateTime AsUtc(DateTime value) =>
+        value.Kind switch
+        {
+            DateTimeKind.Utc => value,
+            DateTimeKind.Local => value.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+        };
+
+    private static string FormatRemaining(long remainingMs)
+    {
+        var s = Math.Max(0, remainingMs / 1000);
+        var h = s / 3600; s %= 3600;
+        var m = s / 60; s %= 60;
+        return $"{h:00}:{m:00}:{s:00}";
     }
 
     private static string EmptyState(string text, string lang) =>
         $"<div class=\"state\"><div class=\"icon soft\">!</div><p>{H(text)}</p></div>";
 
-    private static string ReturnState(Domain.Entities.Payment payment, bool success, bool autoRedirect, string lang)
+    private static string ReturnState(Domain.Entities.Payment payment, bool success, bool autoRedirect, string lang, ProviderRuntimeSettings? settings = null)
     {
         var merchantUrl = ResolveMerchantReturnUrl(payment, success);
         var hasMerchant = !string.IsNullOrWhiteSpace(merchantUrl);
@@ -473,7 +557,7 @@ public class HostedCheckoutController : ControllerBase
                 <div class="state ok">
                   <div class="icon">✓</div>
                   <h1>{T(lang, "تم الدفع بنجاح", "Payment successful")}</h1>
-                  <p>{T(lang, "تمت العملية عبر Fynexpay", "Processed via Fynexpay")}{(payment.Provider != PaymentProviderType.Auto ? $" · {H(DisplayName(payment.Provider))}" : "")}</p>
+                  <p>{T(lang, "تمت العملية عبر Fynexpay", "Processed via Fynexpay")}</p>
                   {redirectBlock}
                 </div>
                 """;
@@ -514,28 +598,33 @@ public class HostedCheckoutController : ControllerBase
         return candidate;
     }
 
-    private static string DisplayName(PaymentProviderType p) => p switch
+    private static string DisplayName(ProviderRuntimeSettings? settings, PaymentProviderType p)
     {
-        PaymentProviderType.Fib => "FIB",
-        PaymentProviderType.ZainCash => "Zain Cash",
-        PaymentProviderType.Qi => "QI Card",
-        PaymentProviderType.SuperQi => "SuperQi",
-        _ => p.ToString()
-    };
+        var fallback = p switch
+        {
+            PaymentProviderType.Fib => "FIB",
+            PaymentProviderType.ZainCash => "Zain Cash",
+            PaymentProviderType.Qi => "QI Card",
+            PaymentProviderType.SuperQi => "SuperQi",
+            PaymentProviderType.Alqaseh => "Alqaseh",
+            _ => p.ToString()
+        };
+        if (settings == null) return fallback;
+        var bundle = p switch
+        {
+            PaymentProviderType.Fib => settings.Fib,
+            PaymentProviderType.ZainCash => settings.ZainCash,
+            PaymentProviderType.Qi => settings.Qi,
+            PaymentProviderType.SuperQi => settings.SuperQi,
+            PaymentProviderType.Alqaseh => settings.Alqaseh,
+            _ => null
+        };
+        return bundle?.ResolveDisplayName(fallback) ?? fallback;
+    }
 
-    private static string ProviderHint(PaymentProviderType p, string lang) => (p, lang) switch
-    {
-        (PaymentProviderType.Fib, "en") => "Pay via First Iraqi Bank app",
-        (PaymentProviderType.Fib, _) => "ادفع عبر تطبيق First Iraqi Bank",
-        (PaymentProviderType.ZainCash, "en") => "Pay via Zain Cash wallet",
-        (PaymentProviderType.ZainCash, _) => "ادفع عبر محفظة زين كاش",
-        (PaymentProviderType.Qi, "en") => "Pay with QI and bank cards",
-        (PaymentProviderType.Qi, _) => "بطاقات QI والبطاقات البنكية",
-        (PaymentProviderType.SuperQi, "en") => "Pay via SuperQi (ALIPAY)",
-        (PaymentProviderType.SuperQi, _) => "ادفع عبر تطبيق SuperQi (ALIPAY)",
-        (_, "en") => "Payment provider",
-        _ => "مزود دفع"
-    };
+    private static string ProviderHint(string lang) => lang == "en"
+        ? "Secure payment method"
+        : "طريقة دفع آمنة";
 
     private static string? LogoUrl(ProviderRuntimeSettings s, PaymentProviderType p)
     {
@@ -545,6 +634,7 @@ public class HostedCheckoutController : ControllerBase
             PaymentProviderType.ZainCash => s.ZainCash.LogoUrl,
             PaymentProviderType.Qi => s.Qi.LogoUrl,
             PaymentProviderType.SuperQi => s.SuperQi.LogoUrl,
+            PaymentProviderType.Alqaseh => s.Alqaseh.LogoUrl,
             _ => null
         };
         if (!string.IsNullOrWhiteSpace(custom)) return custom;
@@ -554,6 +644,7 @@ public class HostedCheckoutController : ControllerBase
             PaymentProviderType.ZainCash => "/providers/zaincash.svg",
             PaymentProviderType.Qi => "/providers/qi.svg",
             PaymentProviderType.SuperQi => "/providers/superqi.svg",
+            PaymentProviderType.Alqaseh => "/providers/alqaseh.svg",
             _ => null
         };
     }
@@ -638,7 +729,7 @@ public class HostedCheckoutController : ControllerBase
               <style>
                 :root{
                   --ink:#031838; --muted:#5b6b86; --line:#e2e8f2;
-                  --brand:#6c3cec; --brand-soft:rgba(108,60,236,.12);
+                  --brand:#031838; --brand-soft:rgba(3, 24, 56,.12);
                   --navy:#031838; --ok:#12b76a; --bad:#f04438;
                   --shadow:0 24px 60px rgba(3,24,56,.12);
                 }
@@ -648,7 +739,7 @@ public class HostedCheckoutController : ControllerBase
                   font-family: {{(lang == "en" ? "\"Plus Jakarta Sans\",\"Cairo\",sans-serif" : "\"Cairo\",\"Plus Jakarta Sans\",sans-serif")}};
                   color:var(--ink);
                   background:
-                    radial-gradient(900px 420px at 85% -5%, rgba(108,60,236,.10), transparent 55%),
+                    radial-gradient(900px 420px at 85% -5%, rgba(3, 24, 56,.10), transparent 55%),
                     radial-gradient(700px 380px at 5% 100%, rgba(3,24,56,.06), transparent 50%),
                     #f4f6fb;
                   position:relative;
@@ -657,9 +748,9 @@ public class HostedCheckoutController : ControllerBase
                 body:before, body:after{
                   content:"";position:fixed;pointer-events:none;z-index:0;
                   width:520px;height:520px;border-radius:50%;
-                  border:1px solid rgba(108,60,236,.08);
+                  border:1px solid rgba(3, 24, 56,.08);
                 }
-                body:before{top:-180px;inset-inline-end:-160px;box-shadow:0 0 0 60px rgba(108,60,236,.03), inset 0 0 0 80px rgba(3,24,56,.02)}
+                body:before{top:-180px;inset-inline-end:-160px;box-shadow:0 0 0 60px rgba(3, 24, 56,.03), inset 0 0 0 80px rgba(3,24,56,.02)}
                 body:after{bottom:-220px;inset-inline-start:-180px;box-shadow:0 0 0 40px rgba(3,24,56,.02)}
                 .page{position:relative;z-index:1;width:min(520px,94vw);margin:28px auto 36px}
                 .page-tools{display:flex;justify-content:flex-end;margin-bottom:10px}
@@ -669,7 +760,7 @@ public class HostedCheckoutController : ControllerBase
                   background:#fff;border:1px solid var(--line);border-radius:999px;padding:7px 12px;
                   box-shadow:0 4px 14px rgba(3,24,56,.04);
                 }
-                .lang:hover{color:var(--brand);border-color:rgba(108,60,236,.3)}
+                .lang:hover{color:var(--brand);border-color:rgba(3, 24, 56,.3)}
                 .lang-caret{font-size:.7rem;opacity:.7}
                 .brand-lockup{
                   display:flex;align-items:center;justify-content:center;gap:14px;margin:8px 0 18px;flex-wrap:wrap;
@@ -692,7 +783,7 @@ public class HostedCheckoutController : ControllerBase
                 .hero{
                   background:
                     radial-gradient(420px 180px at 100% 0%, rgba(255,255,255,.18), transparent 55%),
-                    linear-gradient(145deg,#7b4dff 0%, #6c3cec 45%, #5a2fd4 100%);
+                    linear-gradient(145deg,#031838 0%, #031838 45%, #021225 100%);
                   color:#fff;padding:22px 22px 18px;position:relative;overflow:hidden;
                 }
                 .hero:before{
@@ -709,11 +800,13 @@ public class HostedCheckoutController : ControllerBase
                   background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.22);
                   backdrop-filter:blur(6px);border-radius:999px;padding:6px 12px;font-size:.82rem;font-weight:700;
                 }
-                .currency-badge{
-                  width:36px;height:36px;border-radius:50%;display:grid;place-items:center;
-                  background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);
-                  font-family:"Plus Jakarta Sans",sans-serif;font-weight:800;
+                .ttl{
+                  display:inline-flex;align-items:center;gap:6px;
+                  background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.22);
+                  backdrop-filter:blur(6px);border-radius:999px;padding:6px 12px;font-size:.8rem;font-weight:700;
                 }
+                .ttl-count{font-family:"Plus Jakarta Sans",sans-serif;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+                .ttl.expired{background:rgba(239,68,68,.25);border-color:rgba(239,68,68,.45)}
                 .amount-block{text-align:center;margin-bottom:18px}
                 .amount-label{margin:0 0 6px;opacity:.9;font-weight:600;font-size:.95rem}
                 .amount{margin:0;font-size:2.55rem;font-weight:800;letter-spacing:-.03em;line-height:1.1}
@@ -750,8 +843,8 @@ public class HostedCheckoutController : ControllerBase
                   display:flex;align-items:center;gap:12px;transition:.18s ease;
                 }
                 .provider:hover{
-                  border-color:rgba(108,60,236,.35);
-                  box-shadow:0 10px 24px rgba(108,60,236,.10);
+                  border-color:rgba(3, 24, 56,.35);
+                  box-shadow:0 10px 24px rgba(3, 24, 56,.10);
                   transform:translateY(-1px);
                 }
                 .p-logo-wrap{
@@ -776,15 +869,15 @@ public class HostedCheckoutController : ControllerBase
                   background:var(--brand);color:#fff;text-decoration:none;
                   border-radius:12px;padding:12px 18px;min-height:48px;
                   font:inherit;font-weight:700;font-size:.95rem;letter-spacing:0;
-                  box-shadow:0 8px 20px rgba(108,60,236,.28);
+                  box-shadow:0 8px 20px rgba(3, 24, 56,.28);
                   transition:.15s ease;
                 }
-                .btn:hover{background:#5a2fd4}
+                .btn:hover{background:#021225}
                 .btn-send{
                   width:100%;margin-top:8px;
                   border-radius:12px;min-height:48px;
                   font-family:inherit;font-weight:700;font-size:15px;
-                  box-shadow:0 8px 18px rgba(108,60,236,.22);
+                  box-shadow:0 8px 18px rgba(3, 24, 56,.22);
                 }
                 .btn-send i{font-size:1.15rem;line-height:1}
                 .btn.ghost{background:transparent;color:var(--bad);border:1px solid #efc4c0;box-shadow:none}
@@ -808,8 +901,8 @@ public class HostedCheckoutController : ControllerBase
                   display:grid;place-items:center;font-size:1.75rem;line-height:1;
                 }
                 .verify-icon.wa{background:rgba(37,211,102,.12);color:#25D366;border:1px solid rgba(37,211,102,.22)}
-                .verify-icon.mail{background:rgba(108,60,236,.1);color:var(--brand);border:1px solid rgba(108,60,236,.18)}
-                .verify-icon.secure{background:var(--brand-soft);color:var(--brand);border:1px solid rgba(108,60,236,.18)}
+                .verify-icon.mail{background:rgba(3, 24, 56,.1);color:var(--brand);border:1px solid rgba(3, 24, 56,.18)}
+                .verify-icon.secure{background:var(--brand-soft);color:var(--brand);border:1px solid rgba(3, 24, 56,.18)}
                 .verify-form{display:grid;gap:8px;text-align:start;max-width:360px;margin:0 auto}
                 .field-label{
                   display:inline-flex;align-items:center;gap:6px;
@@ -830,8 +923,8 @@ public class HostedCheckoutController : ControllerBase
                 .phone-input.has-ico{padding-inline-start:42px}
                 .otp-input{text-align:center;letter-spacing:.35em;font-size:1.35rem;font-weight:800}
                 .phone-input:focus,.otp-input:focus{
-                  outline:0;border-color:rgba(108,60,236,.55);
-                  box-shadow:0 0 0 4px rgba(108,60,236,.14);
+                  outline:0;border-color:rgba(3, 24, 56,.55);
+                  box-shadow:0 0 0 4px rgba(3, 24, 56,.14);
                 }
                 .hint{margin:0 0 6px;color:var(--muted);font-size:13px;font-weight:600}
                 .resend-form{margin-top:14px}

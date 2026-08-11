@@ -78,7 +78,7 @@ function onCancel() { close(state.type === 'alert' ? true : false) }
   position: relative;
   width: min(420px, 100%);
   background:
-    radial-gradient(500px 160px at 100% 0%, rgba(108, 60, 236, 0.1), transparent 60%),
+    radial-gradient(500px 160px at 100% 0%, rgba(3, 24, 56, 0.1), transparent 60%),
     #fff;
   border: 1px solid var(--line);
   border-radius: 22px;

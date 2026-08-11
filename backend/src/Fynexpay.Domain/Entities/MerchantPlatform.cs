@@ -17,9 +17,11 @@ public class MerchantPlatform : BaseEntity
     public DateTime? ReviewedAtUtc { get; set; }
     public Guid? ReviewedByUserId { get; set; }
 
-    /// <summary>Encrypted one-time API key (AES-GCM); cleared after claim. Never store plaintext.</summary>
+    /// <summary>Encrypted one-time live API key (AES-GCM); cleared after claim. Never store plaintext.</summary>
     public string? OneTimeApiKey { get; set; }
+    /// <summary>Encrypted one-time test/sandbox API key (AES-GCM); cleared after claim.</summary>
+    public string? OneTimeTestApiKey { get; set; }
 
-    public ApiKey? ApiKey { get; set; }
+    public ICollection<ApiKey> ApiKeys { get; set; } = new List<ApiKey>();
     public ICollection<Payment> Payments { get; set; } = new List<Payment>();
 }

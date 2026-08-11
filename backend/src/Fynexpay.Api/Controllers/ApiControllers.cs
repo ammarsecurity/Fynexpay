@@ -127,6 +127,7 @@ public class MerchantDashboardController : ControllerBase
         [FromQuery] int pageSize = 20,
         CancellationToken ct = default)
     {
+        await _payments.PurgeExpiredIncompleteCheckoutsAsync(ct);
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 5, 100);
         var query = _db.Payments.Where(p => p.MerchantId == MerchantId);
@@ -154,6 +155,8 @@ public class MerchantDashboardController : ControllerBase
     [HttpGet("payments/{id:guid}")]
     public async Task<ActionResult<PaymentDto>> PaymentDetail(Guid id, CancellationToken ct)
     {
+        if (await _payments.TryPurgeExpiredIncompleteCheckoutAsync(id, ct))
+            return NotFound();
         var payment = await _payments.GetDetailAsync(id, MerchantId, ct);
         return payment == null ? NotFound() : Ok(payment);
     }
@@ -167,7 +170,7 @@ public class MerchantDashboardController : ControllerBase
             if (request.MerchantPlatformId is null)
                 return BadRequest(new { message = "اختر منصة معتمدة لإنشاء دفعة تجريبية" });
             var idem = $"dashboard-test-{Guid.NewGuid():N}";
-            return Ok(await _payments.CreateAsync(MerchantId, request, idem, ct, request.MerchantPlatformId));
+            return Ok(await _payments.CreateAsync(MerchantId, request, idem, ct, request.MerchantPlatformId, isTest: true));
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
@@ -253,7 +256,11 @@ public class MerchantDashboardController : ControllerBase
     [HttpPost("platforms/{id:guid}/claim-key")]
     public async Task<ActionResult<object>> ClaimPlatformKey(Guid id, CancellationToken ct)
     {
-        try { return Ok(new { apiKey = await _platforms.ClaimKeyAsync(MerchantId, id, ct) }); }
+        try
+        {
+            var (live, test) = await _platforms.ClaimKeysAsync(MerchantId, id, ct);
+            return Ok(new { apiKey = live, testApiKey = test, liveApiKey = live });
+        }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         { return BadRequest(new { message = ex.Message }); }
     }
@@ -528,7 +535,14 @@ public class AdminController : ControllerBase
             .Skip((page - 1) * pageSize).Take(pageSize)
             .Select(m => new MerchantDto(
                 m.Id, m.BusinessName, m.BusinessNameAr, m.ContactEmail, m.ContactPhone,
-                m.Status.ToString(), m.CommissionPercent, m.WebsiteUrl, m.CreatedAtUtc,
+                m.Status.ToString(),
+                m.CommissionPercent,
+                m.FibCommissionPercent,
+                m.ZainCashCommissionPercent,
+                m.QiCommissionPercent,
+                m.SuperQiCommissionPercent,
+                m.AlqasehCommissionPercent,
+                m.WebsiteUrl, m.CreatedAtUtc,
                 m.Wallet != null ? m.Wallet.AvailableBalance : 0))
             .ToListAsync(ct);
         return Ok(new PagedResult<MerchantDto>(list, total, page, pageSize));
@@ -571,6 +585,7 @@ public class AdminController : ControllerBase
         [FromQuery] int pageSize = 20,
         CancellationToken ct = default)
     {
+        await _payments.PurgeExpiredIncompleteCheckoutsAsync(ct);
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 5, 100);
         var query = _db.Payments.AsQueryable();
@@ -598,6 +613,8 @@ public class AdminController : ControllerBase
     [HttpGet("payments/{id:guid}")]
     public async Task<ActionResult<PaymentDto>> PaymentDetail(Guid id, CancellationToken ct)
     {
+        if (await _payments.TryPurgeExpiredIncompleteCheckoutAsync(id, ct))
+            return NotFound();
         var payment = await _payments.GetDetailAsync(id, null, ct);
         return payment == null ? NotFound() : Ok(payment);
     }
@@ -869,6 +886,7 @@ public class AdminController : ControllerBase
             "zaincash" or "zain" => settings.ZainCash,
             "qi" => settings.Qi,
             "superqi" or "super-qi" => settings.SuperQi,
+            "alqaseh" or "al-qaseh" or "qaseh" => settings.Alqaseh,
             _ => null
         };
 }
@@ -926,7 +944,7 @@ public class MerchantPublicApiController : ControllerBase
     private Guid MerchantId => (Guid)HttpContext.Items["MerchantId"]!;
 
     [HttpPost("payments")]
-    public async Task<ActionResult<PaymentDto>> CreatePayment([FromBody] CreatePublicPaymentRequest request, CancellationToken ct)
+    public async Task<ActionResult<PublicPaymentDto>> CreatePayment([FromBody] CreatePublicPaymentRequest request, CancellationToken ct)
     {
         var idem = Request.Headers["X-Idempotency-Key"].FirstOrDefault();
         var platformId = HttpContext.Items.TryGetValue("MerchantPlatformId", out var pid) && pid is Guid g ? g : (Guid?)null;
@@ -942,22 +960,28 @@ public class MerchantPublicApiController : ControllerBase
             request.CallbackUrl,
             null,
             request.CustomerPhone);
-        try { return Ok(await _payments.CreateAsync(MerchantId, mapped, idem, ct, platformId)); }
+        try
+        {
+            var isTest = HttpContext.Items.TryGetValue("ApiKeyIsTest", out var t) && t is true;
+            return Ok(_payments.ToPublic(await _payments.CreateAsync(MerchantId, mapped, idem, ct, platformId, isTest)));
+        }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         { return BadRequest(new { message = ex.Message }); }
     }
 
     [HttpGet("payments/{id:guid}")]
-    public async Task<ActionResult<PaymentDto>> GetPayment(Guid id, CancellationToken ct)
+    public async Task<ActionResult<PublicPaymentDto>> GetPayment(Guid id, CancellationToken ct)
     {
+        if (await _payments.TryPurgeExpiredIncompleteCheckoutAsync(id, ct))
+            return NotFound();
         var payment = await _payments.GetAsync(MerchantId, id, ct);
-        return payment == null ? NotFound() : Ok(payment);
+        return payment == null ? NotFound() : Ok(_payments.ToPublic(payment));
     }
 
     [HttpPost("payments/{id:guid}/cancel")]
-    public async Task<ActionResult<PaymentDto>> CancelPayment(Guid id, CancellationToken ct)
+    public async Task<ActionResult<PublicPaymentDto>> CancelPayment(Guid id, CancellationToken ct)
     {
-        try { return Ok(await _payments.CancelAsync(MerchantId, id, ct)); }
+        try { return Ok(_payments.ToPublic(await _payments.CancelAsync(MerchantId, id, ct))); }
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
     }
 

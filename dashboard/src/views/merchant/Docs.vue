@@ -135,8 +135,8 @@
       <h2>{{ $t('docs.providersTitle') }}</h2>
       <p class="muted">{{ $t('docs.providersHint') }} <RouterLink to="/merchant/payment-methods">{{ $t('nav.paymentMethods') }}</RouterLink></p>
       <div class="providers">
-        <div class="provider" v-for="p in providers" :key="p.name">
-          <strong>{{ p.name }}</strong>
+        <div class="provider" v-for="p in providers" :key="p.key">
+          <img class="prov-logo" :src="p.logo" alt="" />
           <span>{{ p.desc }}</span>
         </div>
       </div>
@@ -166,8 +166,10 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api, API_BASE } from '../../api'
+import { mediaUrl, useProviders } from '../../composables/useProviders'
 
 const { t } = useI18n()
+const { catalog, ensureCatalog, logoOf } = useProviders()
 const secret = ref('')
 const platforms = ref([])
 const toast = ref('')
@@ -201,12 +203,30 @@ const fields = computed(() => [
   { field: 'failureUrl', required: t('docs.optional'), desc: t('docs.fieldFailure') }
 ])
 
-const providers = computed(() => [
-  { name: 'FIB', desc: t('docs.provFib') },
-  { name: 'Zain Cash', desc: t('docs.provZain') },
-  { name: 'QI', desc: t('docs.provQi') },
-  { name: 'SuperQi', desc: t('docs.provSuperQi') }
-])
+const providers = computed(() => {
+  const hintByKey = {
+    fib: t('docs.provFib'),
+    zaincash: t('docs.provZain'),
+    qi: t('docs.provQi'),
+    superqi: t('docs.provSuperQi'),
+    alqaseh: t('docs.provAlqaseh')
+  }
+  const list = catalog.value || []
+  if (!list.length) {
+    return ['Fib', 'ZainCash', 'Qi', 'SuperQi', 'Alqaseh'].map((key) => ({
+      key,
+      logo: logoOf(key),
+      desc: hintByKey[key.toLowerCase()] || t('docs.provFib')
+    }))
+  }
+  return list
+    .filter((p) => p.enabled !== false)
+    .map((p) => ({
+      key: p.key,
+      logo: mediaUrl(p.logoUrl) || logoOf(p.key),
+      desc: hintByKey[String(p.key).toLowerCase()] || t('methods.customerSees')
+    }))
+})
 
 const createExample = computed(() => {
   const origin = sampleDomain.value.startsWith('localhost') || sampleDomain.value.startsWith('127.0.0.1')
@@ -229,15 +249,17 @@ const createExample = computed(() => {
 
 const createResponse = `{
   "id": "5bac8b83-....",
-  "merchantPlatformId": "96590372-....",
   "orderId": "ORD-....",
   "amount": 5000,
+  "currency": "IQD",
   "status": "Pending",
   "provider": "PendingSelection",
+  "description": "Monthly subscription",
   "checkoutUrl": "${API_BASE}/checkout/....",
-  "availableProviders": ["Qi", "ZainCash", "Fib", "SuperQi"],
-  "platformFee": 125,
-  "netAmount": 4875
+  "createdAtUtc": "2026-08-11T19:40:36Z",
+  "paidAtUtc": null,
+  "expiredAtUtc": "2026-08-11T20:40:36Z",
+  "failureReason": null
 }`
 
 const statusExample = computed(() => `curl ${API_BASE}/v1/payments/PAYMENT_ID \\
@@ -251,10 +273,12 @@ const webhookExample = `{
   "currency": "IQD",
   "status": "Paid",
   "provider": "Fib",
-  "merchantPlatformId": "96590372-....",
-  "platformFee": 125,
-  "netAmount": 4875,
-  "paidAtUtc": "2026-08-09T13:40:00Z"
+  "description": "Monthly subscription",
+  "checkoutUrl": "${API_BASE}/checkout/....",
+  "createdAtUtc": "2026-08-11T19:40:36Z",
+  "paidAtUtc": "2026-08-11T19:41:10Z",
+  "expiredAtUtc": "2026-08-11T20:40:36Z",
+  "failureReason": null
 }`
 
 function showToast(msg) {
@@ -279,6 +303,7 @@ async function copy(text, okMsg) {
 }
 
 onMounted(async () => {
+  ensureCatalog()
   try {
     const [s, p] = await Promise.all([
       api.get('/api/merchant/webhook-secret'),
@@ -299,9 +324,9 @@ onMounted(async () => {
   grid-template-columns: 1.4fr 1fr;
   gap: 20px;
   background:
-    radial-gradient(700px 220px at 100% 0%, rgba(108, 60, 236, 0.12), transparent 55%),
+    radial-gradient(700px 220px at 100% 0%, rgba(3, 24, 56, 0.12), transparent 55%),
     #fff;
-  border-color: rgba(108, 60, 236, 0.18);
+  border-color: rgba(3, 24, 56, 0.18);
 }
 .eyebrow {
   display: inline-block;
@@ -360,10 +385,10 @@ onMounted(async () => {
 .platform-pill strong { color: var(--brand); }
 .platform-pill .mono { font-size: 0.82rem; color: var(--muted); }
 .empty-platform {
-  border: 1px dashed rgba(108, 60, 236, 0.35);
+  border: 1px dashed rgba(3, 24, 56, 0.35);
   border-radius: 16px;
   padding: 18px;
-  background: rgba(108, 60, 236, 0.04);
+  background: rgba(3, 24, 56, 0.04);
   display: grid;
   gap: 12px;
   align-content: start;
@@ -391,7 +416,7 @@ onMounted(async () => {
   font-weight: 800;
   color: #fff;
   background: linear-gradient(145deg, var(--brand), var(--brand-secondary));
-  box-shadow: 0 10px 20px rgba(108, 60, 236, 0.25);
+  box-shadow: 0 10px 20px rgba(3, 24, 56, 0.25);
 }
 .step-body h3 { margin: 0 0 6px; color: var(--brand); font-size: 0.98rem; }
 .step-body p { margin: 0 0 12px; color: var(--muted); font-size: 0.88rem; font-weight: 600; line-height: 1.5; }
@@ -485,14 +510,23 @@ tr:last-child td { border-bottom: 0; }
   border-radius: 14px;
   padding: 14px;
   background: #f8fafc;
-  display: grid;
-  gap: 6px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
-.provider strong { color: var(--brand); }
+.provider .prov-logo {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #fff;
+  flex-shrink: 0;
+}
 .provider span { color: var(--muted); font-size: 0.85rem; font-weight: 600; }
 .tip {
   background:
-    radial-gradient(600px 180px at 0% 0%, rgba(108, 60, 236, 0.08), transparent 55%),
+    radial-gradient(600px 180px at 0% 0%, rgba(3, 24, 56, 0.08), transparent 55%),
     #fff;
 }
 .actions { margin-top: 14px; gap: 10px; flex-wrap: wrap; }

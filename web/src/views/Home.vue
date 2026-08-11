@@ -8,7 +8,7 @@
         <h1>{{ c.heroTitle }}</h1>
         <p class="sub">{{ c.heroSubtitle }}</p>
         <div class="hero-cta">
-          <a class="btn primary" :href="dashboardUrl + '/register'">{{ c.ctaMerchant }}</a>
+          <RouterLink class="btn primary" to="/register">{{ c.ctaMerchant }}</RouterLink>
           <a class="btn ghost" :href="apiUrl + '/swagger/index.html?urls.primaryName=' + encodeURIComponent('Merchant API')">{{ c.ctaDocs }}</a>
         </div>
       </div>
@@ -26,9 +26,6 @@
           <div class="bars">
             <i style="height:45%"></i><i style="height:70%"></i><i style="height:55%"></i>
             <i style="height:90%"></i><i style="height:62%"></i><i style="height:78%"></i>
-          </div>
-          <div class="chip-row">
-            <span class="chip" v-for="p in c.providerPills?.slice(0, 4)" :key="p">{{ p }}</span>
           </div>
         </div>
         <div class="mock-card mock-phone">
@@ -57,17 +54,6 @@
     </div>
   </section>
 
-  <section class="section" id="providers" v-if="c">
-    <div class="section-head">
-      <span class="eyebrow">{{ c.providersEyebrow }}</span>
-      <h2>{{ c.providersTitle }}</h2>
-      <p>{{ c.providersSubtitle }}</p>
-    </div>
-    <div class="providers">
-      <span class="provider-pill" v-for="p in c.providerPills" :key="p">{{ p }}</span>
-    </div>
-  </section>
-
   <section class="section" id="api" v-if="c">
     <div class="section-head">
       <span class="eyebrow">{{ c.apiEyebrow }}</span>
@@ -87,13 +73,19 @@
 
   <section class="cta-band" v-if="c">
     <div class="cta-inner">
-      <div>
+      <div class="cta-copy">
+        <img class="cta-brand" src="/full-logo.png" alt="Fynexpay" />
         <h2>{{ c.ctaTitle }}</h2>
         <p>{{ c.ctaSubtitle }}</p>
       </div>
       <div class="cta-actions">
-        <a class="btn white" :href="dashboardUrl + '/register'">{{ c.ctaRegister }}</a>
-        <RouterLink class="btn outline-white" to="/contact">{{ c.navContact }}</RouterLink>
+        <RouterLink class="btn cta-primary" to="/register">
+          {{ c.ctaRegister }}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M15 6 9 12l6 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </RouterLink>
+        <RouterLink class="btn cta-secondary" to="/login">{{ c.ctaContact }}</RouterLink>
       </div>
     </div>
   </section>
@@ -105,5 +97,5 @@
 import SiteNav from '../components/SiteNav.vue'
 import { useLanding } from '../composables/useLanding'
 
-const { c, apiUrl, dashboardUrl, year } = useLanding()
+const { c, apiUrl, year } = useLanding()
 </script>

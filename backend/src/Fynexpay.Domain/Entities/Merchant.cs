@@ -10,6 +10,16 @@ public class Merchant : BaseEntity
     public string? ContactPhone { get; set; }
     public MerchantStatus Status { get; set; } = MerchantStatus.Pending;
     public decimal CommissionPercent { get; set; } = 2.5m;
+    /// <summary>عمولة المنصة عند الدفع عبر FIB (%).</summary>
+    public decimal FibCommissionPercent { get; set; } = 2.5m;
+    /// <summary>عمولة المنصة عند الدفع عبر ZainCash (%).</summary>
+    public decimal ZainCashCommissionPercent { get; set; } = 2.5m;
+    /// <summary>عمولة المنصة عند الدفع عبر QI (%).</summary>
+    public decimal QiCommissionPercent { get; set; } = 2.5m;
+    /// <summary>عمولة المنصة عند الدفع عبر SuperQi (%).</summary>
+    public decimal SuperQiCommissionPercent { get; set; } = 2.5m;
+    /// <summary>عمولة المنصة عند الدفع عبر Alqaseh (%).</summary>
+    public decimal AlqasehCommissionPercent { get; set; } = 2.5m;
     public string WebhookSecret { get; set; } = string.Empty;
     public string? WebsiteUrl { get; set; }
     public string? Notes { get; set; }
@@ -19,6 +29,7 @@ public class Merchant : BaseEntity
     public bool ZainCashEnabled { get; set; } = true;
     public bool QiEnabled { get; set; } = true;
     public bool SuperQiEnabled { get; set; } = true;
+    public bool AlqasehEnabled { get; set; } = true;
 
     public Wallet? Wallet { get; set; }
     public ICollection<User> Users { get; set; } = new List<User>();

@@ -117,6 +117,11 @@ public class AuthService
             WebsiteUrl = websiteUrl?.Trim(),
             Status = MerchantStatus.Pending,
             CommissionPercent = 2.5m,
+            FibCommissionPercent = 2.5m,
+            ZainCashCommissionPercent = 2.5m,
+            QiCommissionPercent = 2.5m,
+            SuperQiCommissionPercent = 2.5m,
+            AlqasehCommissionPercent = 2.5m,
             WebhookSecret = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant()
         };
 
@@ -200,7 +205,8 @@ public class PaymentService
         CreatePaymentRequest request,
         string? idempotencyKey,
         CancellationToken ct = default,
-        Guid? merchantPlatformId = null)
+        Guid? merchantPlatformId = null,
+        bool isTest = false)
     {
         var merchant = await _db.Merchants.FirstOrDefaultAsync(m => m.Id == merchantId, ct)
             ?? throw new InvalidOperationException("التاجر غير موجود");
@@ -269,10 +275,12 @@ public class PaymentService
             FailureUrl = request.FailureUrl?.Trim(),
             CallbackUrl = request.CallbackUrl?.Trim(),
             IdempotencyKey = idempotencyKey,
+            // مؤقت حتى اختيار المزود — يُعاد الحساب في Initiate حسب عمولة ذلك المزود
             PlatformFee = fee,
             NetAmount = net,
-            ExpiredAtUtc = DateTime.UtcNow.AddHours(2),
-            CustomerPhone = string.IsNullOrWhiteSpace(request.CustomerPhone) ? null : request.CustomerPhone.Trim()
+            ExpiredAtUtc = DateTime.UtcNow.AddHours(1),
+            CustomerPhone = string.IsNullOrWhiteSpace(request.CustomerPhone) ? null : request.CustomerPhone.Trim(),
+            IsTest = isTest
         };
 
         _db.Payments.Add(payment);
@@ -301,7 +309,9 @@ public class PaymentService
             Payload = JsonSerializer.Serialize(new
             {
                 availableProviders = available.Select(p => p.ToString()).ToArray(),
-                serviceType = payment.Description
+                serviceType = payment.Description,
+                mode = payment.IsTest ? "test" : "live",
+                providerEnvironment = payment.IsTest ? "Test" : "Production"
             })
         });
 
@@ -318,13 +328,13 @@ public class PaymentService
         if (payment.Status != PaymentStatus.Pending)
             throw new InvalidOperationException("لا يمكن متابعة هذه الدفعة");
 
-        if (payment.ExpiredAtUtc.HasValue && payment.ExpiredAtUtc < DateTime.UtcNow)
-        {
-            payment.Status = PaymentStatus.Expired;
-            payment.UpdatedAtUtc = DateTime.UtcNow;
-            await _db.SaveChangesAsync(ct);
-            throw new InvalidOperationException("انتهت صلاحية رابط الدفع");
-        }
+        if (await TryPurgeExpiredIncompleteCheckoutAsync(payment.Id, ct))
+            throw new InvalidOperationException("انتهت صلاحية رابط الدفع وتم إغلاق الجلسة");
+
+        // إعادة تحميل بعد فحص المهلة
+        payment = await _db.Payments.Include(p => p.Merchant)
+            .FirstOrDefaultAsync(p => p.Id == paymentId, ct)
+            ?? throw new InvalidOperationException("انتهت صلاحية رابط الدفع وتم إغلاق الجلسة");
 
         // إذا سبق اختيار مزود، أعد توجيه الزبون لنفس الرابط
         if (payment.Provider != PaymentProviderType.Auto && !string.IsNullOrWhiteSpace(payment.ProviderCheckoutUrl))
@@ -343,17 +353,21 @@ public class PaymentService
         // المزود يرجع دائماً للمنصة أولاً، ثم المنصة تحوّل لرابط التاجر
         var platformSuccess = $"{_publicBaseUrl}/checkout/{payment.Id}/return?result=success";
         var platformFailure = $"{_publicBaseUrl}/checkout/{payment.Id}/return?result=failure";
-        var result = await provider.CreatePaymentAsync(new CreateProviderPaymentRequest
+        ProviderPaymentResult result;
+        using (ProviderEnvironmentScope.Use(payment.IsTest))
         {
-            PaymentId = payment.Id,
-            Amount = payment.Amount,
-            Currency = payment.Currency,
-            Description = payment.Description ?? $"Order {payment.MerchantOrderId}",
-            StatusCallbackUrl = callbackUrl,
-            SuccessUrl = platformSuccess,
-            FailureUrl = platformFailure,
-            MerchantOrderId = payment.MerchantOrderId
-        }, ct);
+            result = await provider.CreatePaymentAsync(new CreateProviderPaymentRequest
+            {
+                PaymentId = payment.Id,
+                Amount = payment.Amount,
+                Currency = payment.Currency,
+                Description = payment.Description ?? $"Order {payment.MerchantOrderId}",
+                StatusCallbackUrl = callbackUrl,
+                SuccessUrl = platformSuccess,
+                FailureUrl = platformFailure,
+                MerchantOrderId = payment.MerchantOrderId
+            }, ct);
+        }
 
         if (!result.Success)
         {
@@ -364,13 +378,18 @@ public class PaymentService
             throw new InvalidOperationException(result.ErrorMessage ?? "فشل إنشاء الدفعة لدى المزود");
         }
 
+        ApplyProviderCommission(payment, payment.Merchant, providerType);
+
         payment.Provider = providerType;
         payment.ProviderPaymentId = result.ProviderPaymentId;
         payment.ProviderCheckoutUrl = result.CheckoutUrl;
         payment.CheckoutUrl = $"{_publicBaseUrl}/checkout/{payment.Id}";
         payment.QrCode = result.QrCode;
         payment.ReadableCode = result.ReadableCode;
-        payment.ExpiredAtUtc = result.ValidUntilUtc ?? payment.ExpiredAtUtc;
+        // لا نمدّد مهلة صفحة الدفع المستضافة عن ساعة الإنشاء
+        if (result.ValidUntilUtc.HasValue && payment.ExpiredAtUtc.HasValue
+            && result.ValidUntilUtc.Value < payment.ExpiredAtUtc.Value)
+            payment.ExpiredAtUtc = result.ValidUntilUtc;
         payment.ProviderRawResponse = result.RawResponse;
         payment.UpdatedAtUtc = DateTime.UtcNow;
         payment.FailureReason = null;
@@ -407,6 +426,7 @@ public class PaymentService
             merchant.ZainCashEnabled,
             merchant.QiEnabled,
             merchant.SuperQiEnabled,
+            merchant.AlqasehEnabled,
             platform.Select(p => p.ToString()).ToList(),
             effective.Select(p => p.ToString()).ToList(),
             catalog);
@@ -417,19 +437,31 @@ public class PaymentService
         var s = await _providerSettings.GetAsync(ct);
         return new[]
         {
-            Item(PaymentProviderType.Fib, "FIB", s.Fib),
-            Item(PaymentProviderType.ZainCash, "ZainCash", s.ZainCash),
-            Item(PaymentProviderType.Qi, "QI Card", s.Qi),
-            Item(PaymentProviderType.SuperQi, "SuperQi", s.SuperQi)
+            Item(PaymentProviderType.Fib, s.Fib),
+            Item(PaymentProviderType.ZainCash, s.ZainCash),
+            Item(PaymentProviderType.Qi, s.Qi),
+            Item(PaymentProviderType.SuperQi, s.SuperQi),
+            Item(PaymentProviderType.Alqaseh, s.Alqaseh)
         };
 
-        static ProviderCatalogItemDto Item(PaymentProviderType type, string name, ProviderBundleSettings b)
+        static ProviderCatalogItemDto Item(PaymentProviderType type, ProviderBundleSettings b)
         {
             var logo = string.IsNullOrWhiteSpace(b.LogoUrl)
                 ? DefaultLogo(type)
                 : b.LogoUrl;
+            var name = b.ResolveDisplayName(DefaultName(type));
             return new(type.ToString(), name, logo, b.Enabled, b.Priority);
         }
+
+        static string DefaultName(PaymentProviderType type) => type switch
+        {
+            PaymentProviderType.Fib => "FIB",
+            PaymentProviderType.ZainCash => "ZainCash",
+            PaymentProviderType.Qi => "QI Card",
+            PaymentProviderType.SuperQi => "SuperQi",
+            PaymentProviderType.Alqaseh => "Alqaseh",
+            _ => type.ToString()
+        };
 
         static string DefaultLogo(PaymentProviderType type) => type switch
         {
@@ -437,6 +469,7 @@ public class PaymentService
             PaymentProviderType.ZainCash => "/providers/zaincash.svg",
             PaymentProviderType.Qi => "/providers/qi.svg",
             PaymentProviderType.SuperQi => "/providers/superqi.svg",
+            PaymentProviderType.Alqaseh => "/providers/alqaseh.svg",
             _ => ""
         };
     }
@@ -453,8 +486,10 @@ public class PaymentService
         if (request.ZainCashEnabled.HasValue) merchant.ZainCashEnabled = request.ZainCashEnabled.Value;
         if (request.QiEnabled.HasValue) merchant.QiEnabled = request.QiEnabled.Value;
         if (request.SuperQiEnabled.HasValue) merchant.SuperQiEnabled = request.SuperQiEnabled.Value;
+        if (request.AlqasehEnabled.HasValue) merchant.AlqasehEnabled = request.AlqasehEnabled.Value;
 
-        if (!merchant.FibEnabled && !merchant.ZainCashEnabled && !merchant.QiEnabled && !merchant.SuperQiEnabled)
+        if (!merchant.FibEnabled && !merchant.ZainCashEnabled && !merchant.QiEnabled
+            && !merchant.SuperQiEnabled && !merchant.AlqasehEnabled)
             throw new ArgumentException("يجب تفعيل مزود دفع واحد على الأقل");
 
         merchant.UpdatedAtUtc = DateTime.UtcNow;
@@ -471,9 +506,131 @@ public class PaymentService
             PaymentProviderType.ZainCash => merchant.ZainCashEnabled,
             PaymentProviderType.Qi => merchant.QiEnabled,
             PaymentProviderType.SuperQi => merchant.SuperQiEnabled,
+            PaymentProviderType.Alqaseh => merchant.AlqasehEnabled,
             _ => false
         }).ToList();
     }
+
+    /// <summary>
+    /// جلسة الدفع المستضافة صالحة ساعة واحدة. إن انتهت دون دفع ناجح تُحذف الدفعة وبياناتها.
+    /// </summary>
+    /// <returns>true إذا حُذفت الجلسة لانتهاء المهلة.</returns>
+    public async Task<bool> TryPurgeExpiredIncompleteCheckoutAsync(Guid paymentId, CancellationToken ct = default)
+    {
+        var payment = await _db.Payments.FirstOrDefaultAsync(p => p.Id == paymentId, ct);
+        if (payment == null)
+            return true; // تعتبر منتهية/غير موجودة
+
+        if (payment.Status is not PaymentStatus.Pending and not PaymentStatus.Expired)
+            return false;
+
+        var deadline = AsUtc(payment.ExpiredAtUtc ?? payment.CreatedAtUtc.AddHours(1));
+        if (deadline >= DateTime.UtcNow)
+            return false;
+
+        await DeletePaymentGraphAsync(payment, ct);
+        return true;
+    }
+
+    /// <summary>
+    /// يحذف كل دفعات Pending/Expired التي تجاوزت مهلة الساعة دون اكتمال الدفع.
+    /// </summary>
+    public async Task<int> PurgeExpiredIncompleteCheckoutsAsync(CancellationToken ct = default, int take = 200)
+    {
+        var now = DateTime.UtcNow;
+        var cutoff = now.AddHours(-1);
+
+        var expired = await _db.Payments
+            .Where(p => p.Status == PaymentStatus.Pending || p.Status == PaymentStatus.Expired)
+            .Where(p =>
+                (p.ExpiredAtUtc != null && p.ExpiredAtUtc < now)
+                || (p.ExpiredAtUtc == null && p.CreatedAtUtc < cutoff))
+            .OrderBy(p => p.CreatedAtUtc)
+            .Take(Math.Clamp(take, 1, 500))
+            .ToListAsync(ct);
+
+        if (expired.Count == 0)
+            return 0;
+
+        // Double-check Kind/UTC wall-clock for rows that EF may treat as Unspecified.
+        var toDelete = expired
+            .Where(p => AsUtc(p.ExpiredAtUtc ?? p.CreatedAtUtc.AddHours(1)) < now)
+            .ToList();
+        if (toDelete.Count == 0)
+            return 0;
+
+        var ids = toDelete.Select(p => p.Id).ToList();
+
+        var events = await _db.PaymentEvents.Where(e => ids.Contains(e.PaymentId)).ToListAsync(ct);
+        if (events.Count > 0)
+            _db.PaymentEvents.RemoveRange(events);
+
+        var otps = await _db.OtpChallenges.Where(o => o.PaymentId != null && ids.Contains(o.PaymentId.Value)).ToListAsync(ct);
+        if (otps.Count > 0)
+            _db.OtpChallenges.RemoveRange(otps);
+
+        var ledger = await _db.WalletLedgerEntries.Where(l => l.PaymentId != null && ids.Contains(l.PaymentId.Value)).ToListAsync(ct);
+        if (ledger.Count > 0)
+            _db.WalletLedgerEntries.RemoveRange(ledger);
+
+        _db.Payments.RemoveRange(toDelete);
+        await _db.SaveChangesAsync(ct);
+        return toDelete.Count;
+    }
+
+    private async Task DeletePaymentGraphAsync(Payment payment, CancellationToken ct)
+    {
+        var paymentId = payment.Id;
+        var events = await _db.PaymentEvents.Where(e => e.PaymentId == paymentId).ToListAsync(ct);
+        if (events.Count > 0)
+            _db.PaymentEvents.RemoveRange(events);
+
+        var otps = await _db.OtpChallenges.Where(o => o.PaymentId == paymentId).ToListAsync(ct);
+        if (otps.Count > 0)
+            _db.OtpChallenges.RemoveRange(otps);
+
+        var ledger = await _db.WalletLedgerEntries.Where(l => l.PaymentId == paymentId).ToListAsync(ct);
+        if (ledger.Count > 0)
+            _db.WalletLedgerEntries.RemoveRange(ledger);
+
+        _db.Payments.Remove(payment);
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task<DateTime?> GetCheckoutDeadlineUtcAsync(Guid paymentId, CancellationToken ct = default)
+    {
+        var payment = await _db.Payments.AsNoTracking().FirstOrDefaultAsync(p => p.Id == paymentId, ct);
+        if (payment == null) return null;
+        return AsUtc(payment.ExpiredAtUtc ?? payment.CreatedAtUtc.AddHours(1));
+    }
+
+    private static DateTime AsUtc(DateTime value) =>
+        value.Kind switch
+        {
+            DateTimeKind.Utc => value,
+            DateTimeKind.Local => value.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+        };
+
+    private static void ApplyProviderCommission(Payment payment, Merchant merchant, PaymentProviderType provider)
+    {
+        var rate = ResolveCommissionPercent(merchant, provider);
+        var fee = Math.Round(payment.Amount * rate / 100m, 0, MidpointRounding.AwayFromZero);
+        if (fee < 0) fee = 0;
+        if (fee > payment.Amount) fee = payment.Amount;
+        payment.PlatformFee = fee;
+        payment.NetAmount = payment.Amount - fee;
+    }
+
+    public static decimal ResolveCommissionPercent(Merchant merchant, PaymentProviderType provider) => provider switch
+    {
+        PaymentProviderType.Fib => merchant.FibCommissionPercent,
+        PaymentProviderType.ZainCash => merchant.ZainCashCommissionPercent,
+        PaymentProviderType.Qi => merchant.QiCommissionPercent,
+        PaymentProviderType.SuperQi => merchant.SuperQiCommissionPercent,
+        PaymentProviderType.Alqaseh => merchant.AlqasehCommissionPercent,
+        _ => merchant.CommissionPercent
+    };
 
     private static string? FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
@@ -495,7 +652,8 @@ public class PaymentService
         if (!string.IsNullOrEmpty(payment.ProviderPaymentId))
         {
             var provider = _resolver.Resolve(payment.Provider);
-            await provider.CancelAsync(payment.ProviderPaymentId, ct);
+            using (ProviderEnvironmentScope.Use(payment.IsTest))
+                await provider.CancelAsync(payment.ProviderPaymentId, ct);
         }
 
         payment.Status = PaymentStatus.Cancelled;
@@ -540,7 +698,9 @@ public class PaymentService
         if (effective == PaymentStatus.Paid && !payment.LedgerApplied)
         {
             payment.PaidAtUtc = DateTime.UtcNow;
-            await CreditWalletAsync(payment, ct);
+            // Sandbox / dashboard test payments never credit the live merchant wallet.
+            if (!payment.IsTest)
+                await CreditWalletAsync(payment, ct);
             payment.LedgerApplied = true;
         }
         else if (previous == PaymentStatus.Paid
@@ -548,7 +708,8 @@ public class PaymentService
                  && payment.LedgerApplied
                  && !payment.RefundLedgerApplied)
         {
-            await DebitWalletForRefundAsync(payment, ct);
+            if (!payment.IsTest)
+                await DebitWalletForRefundAsync(payment, ct);
             payment.RefundLedgerApplied = true;
         }
 
@@ -633,7 +794,9 @@ public class PaymentService
             return;
 
         var provider = _resolver.Resolve(payment.Provider);
-        var status = await provider.GetStatusAsync(payment.ProviderPaymentId, ct);
+        ProviderStatusResult status;
+        using (ProviderEnvironmentScope.Use(payment.IsTest))
+            status = await provider.GetStatusAsync(payment.ProviderPaymentId, ct);
         if (status.Status == PaymentStatus.Pending)
             return;
 
@@ -733,6 +896,7 @@ public class PaymentService
             p.PlatformFee,
             p.NetAmount,
             p.LedgerApplied,
+            p.IsTest,
             p.CreatedAtUtc,
             p.UpdatedAtUtc,
             p.PaidAtUtc,
@@ -742,6 +906,38 @@ public class PaymentService
             availableProviders,
             events);
     }
+
+    public PublicPaymentDto MapPublic(Payment p) =>
+        new(
+            p.Id,
+            p.MerchantOrderId,
+            p.Amount,
+            p.Currency,
+            p.Status.ToString(),
+            p.Provider == PaymentProviderType.Auto ? "PendingSelection" : p.Provider.ToString(),
+            p.Description,
+            string.IsNullOrWhiteSpace(p.CheckoutUrl) ? null : p.CheckoutUrl,
+            p.IsTest ? "test" : "live",
+            p.CreatedAtUtc,
+            p.PaidAtUtc,
+            p.ExpiredAtUtc,
+            p.FailureReason);
+
+    public PublicPaymentDto ToPublic(PaymentDto dto) =>
+        new(
+            dto.Id,
+            dto.OrderId,
+            dto.Amount,
+            dto.Currency,
+            dto.Status,
+            dto.Provider,
+            dto.Description,
+            dto.CheckoutUrl,
+            dto.IsTest ? "test" : "live",
+            dto.CreatedAtUtc,
+            dto.PaidAtUtc,
+            dto.ExpiredAtUtc,
+            dto.FailureReason);
 
     public async Task<PaymentDto?> GetDetailAsync(Guid paymentId, Guid? merchantId = null, CancellationToken ct = default)
     {
@@ -987,7 +1183,14 @@ public class MerchantAdminService
             .OrderByDescending(m => m.CreatedAtUtc)
             .Select(m => new MerchantDto(
                 m.Id, m.BusinessName, m.BusinessNameAr, m.ContactEmail, m.ContactPhone,
-                m.Status.ToString(), m.CommissionPercent, m.WebsiteUrl, m.CreatedAtUtc,
+                m.Status.ToString(),
+                m.CommissionPercent,
+                m.FibCommissionPercent,
+                m.ZainCashCommissionPercent,
+                m.QiCommissionPercent,
+                m.SuperQiCommissionPercent,
+                m.AlqasehCommissionPercent,
+                m.WebsiteUrl, m.CreatedAtUtc,
                 m.Wallet != null ? m.Wallet.AvailableBalance : 0))
             .ToListAsync(ct);
     }
@@ -1013,8 +1216,15 @@ public class MerchantAdminService
 
         return new MerchantDetailDto(
             m.Id, m.BusinessName, m.BusinessNameAr, m.ContactEmail, m.ContactPhone,
-            m.Status.ToString(), m.CommissionPercent, m.WebsiteUrl, m.Notes, maskedSecret,
-            m.FibEnabled, m.ZainCashEnabled, m.QiEnabled, m.SuperQiEnabled,
+            m.Status.ToString(),
+            m.CommissionPercent,
+            m.FibCommissionPercent,
+            m.ZainCashCommissionPercent,
+            m.QiCommissionPercent,
+            m.SuperQiCommissionPercent,
+            m.AlqasehCommissionPercent,
+            m.WebsiteUrl, m.Notes, maskedSecret,
+            m.FibEnabled, m.ZainCashEnabled, m.QiEnabled, m.SuperQiEnabled, m.AlqasehEnabled,
             m.CreatedAtUtc, m.UpdatedAtUtc,
             m.Wallet?.AvailableBalance ?? 0,
             m.Wallet?.PendingBalance ?? 0,
@@ -1037,9 +1247,33 @@ public class MerchantAdminService
 
         if (request.CommissionPercent.HasValue)
         {
-            if (request.CommissionPercent < 0 || request.CommissionPercent > 100)
-                throw new ArgumentException("نسبة العمولة غير صالحة");
+            ValidateCommission(request.CommissionPercent.Value);
             merchant.CommissionPercent = request.CommissionPercent.Value;
+        }
+        if (request.FibCommissionPercent.HasValue)
+        {
+            ValidateCommission(request.FibCommissionPercent.Value);
+            merchant.FibCommissionPercent = request.FibCommissionPercent.Value;
+        }
+        if (request.ZainCashCommissionPercent.HasValue)
+        {
+            ValidateCommission(request.ZainCashCommissionPercent.Value);
+            merchant.ZainCashCommissionPercent = request.ZainCashCommissionPercent.Value;
+        }
+        if (request.QiCommissionPercent.HasValue)
+        {
+            ValidateCommission(request.QiCommissionPercent.Value);
+            merchant.QiCommissionPercent = request.QiCommissionPercent.Value;
+        }
+        if (request.SuperQiCommissionPercent.HasValue)
+        {
+            ValidateCommission(request.SuperQiCommissionPercent.Value);
+            merchant.SuperQiCommissionPercent = request.SuperQiCommissionPercent.Value;
+        }
+        if (request.AlqasehCommissionPercent.HasValue)
+        {
+            ValidateCommission(request.AlqasehCommissionPercent.Value);
+            merchant.AlqasehCommissionPercent = request.AlqasehCommissionPercent.Value;
         }
 
         if (request.Notes != null)
@@ -1066,6 +1300,7 @@ public class MerchantAdminService
         if (request.ZainCashEnabled.HasValue) merchant.ZainCashEnabled = request.ZainCashEnabled.Value;
         if (request.QiEnabled.HasValue) merchant.QiEnabled = request.QiEnabled.Value;
         if (request.SuperQiEnabled.HasValue) merchant.SuperQiEnabled = request.SuperQiEnabled.Value;
+        if (request.AlqasehEnabled.HasValue) merchant.AlqasehEnabled = request.AlqasehEnabled.Value;
 
         var owner = merchant.Users.OrderBy(u => u.CreatedAtUtc).FirstOrDefault();
         if (owner != null)
@@ -1120,8 +1355,21 @@ public class MerchantAdminService
 
         return new MerchantDto(
             merchant.Id, merchant.BusinessName, merchant.BusinessNameAr, merchant.ContactEmail, merchant.ContactPhone,
-            merchant.Status.ToString(), merchant.CommissionPercent, merchant.WebsiteUrl, merchant.CreatedAtUtc,
+            merchant.Status.ToString(),
+            merchant.CommissionPercent,
+            merchant.FibCommissionPercent,
+            merchant.ZainCashCommissionPercent,
+            merchant.QiCommissionPercent,
+            merchant.SuperQiCommissionPercent,
+            merchant.AlqasehCommissionPercent,
+            merchant.WebsiteUrl, merchant.CreatedAtUtc,
             merchant.Wallet?.AvailableBalance ?? 0);
+    }
+
+    private static void ValidateCommission(decimal value)
+    {
+        if (value < 0 || value > 100)
+            throw new ArgumentException("نسبة العمولة غير صالحة");
     }
 
     public async Task DeleteAsync(Guid merchantId, CancellationToken ct = default)
@@ -1183,7 +1431,7 @@ public class MerchantAdminService
             .Where(k => k.MerchantId == merchantId)
             .OrderByDescending(k => k.CreatedAtUtc)
             .Select(k => new ApiKeyDto(
-                k.Id, k.Name, k.KeyPrefix, k.IsActive, k.CreatedAtUtc, k.LastUsedAtUtc,
+                k.Id, k.Name, k.KeyPrefix, k.IsActive, k.IsTest, k.CreatedAtUtc, k.LastUsedAtUtc,
                 k.MerchantPlatformId,
                 k.MerchantPlatform != null ? k.MerchantPlatform.Name : null,
                 k.MerchantPlatform != null ? k.MerchantPlatform.Domain : null))
@@ -1204,7 +1452,14 @@ public class MerchantAdminService
         var m = await _db.Merchants.Include(x => x.Wallet).FirstOrDefaultAsync(x => x.Id == merchantId, ct)
             ?? throw new InvalidOperationException("التاجر غير موجود");
         return new MerchantDto(m.Id, m.BusinessName, m.BusinessNameAr, m.ContactEmail, m.ContactPhone,
-            m.Status.ToString(), m.CommissionPercent, m.WebsiteUrl, m.CreatedAtUtc, m.Wallet?.AvailableBalance ?? 0);
+            m.Status.ToString(),
+            m.CommissionPercent,
+            m.FibCommissionPercent,
+            m.ZainCashCommissionPercent,
+            m.QiCommissionPercent,
+            m.SuperQiCommissionPercent,
+            m.AlqasehCommissionPercent,
+            m.WebsiteUrl, m.CreatedAtUtc, m.Wallet?.AvailableBalance ?? 0);
     }
 
     public async Task<string> GetWebhookSecretAsync(Guid merchantId, CancellationToken ct = default)
@@ -1217,11 +1472,70 @@ public class MerchantAdminService
     {
         var merchants = await _db.Merchants.CountAsync(ct);
         var active = await _db.Merchants.CountAsync(m => m.Status == MerchantStatus.Active, ct);
+        var pendingMerchants = await _db.Merchants.CountAsync(m => m.Status == MerchantStatus.Pending, ct);
+
         var payments = await _db.Payments.CountAsync(ct);
+        var paidCount = await _db.Payments.CountAsync(p => p.Status == PaymentStatus.Paid, ct);
+        var pendingPayments = await _db.Payments.CountAsync(p => p.Status == PaymentStatus.Pending, ct);
+        var failedPayments = await _db.Payments.CountAsync(p =>
+            p.Status == PaymentStatus.Failed
+            || p.Status == PaymentStatus.Declined
+            || p.Status == PaymentStatus.Expired
+            || p.Status == PaymentStatus.Cancelled, ct);
+
         var gross = await _db.Payments.Where(p => p.Status == PaymentStatus.Paid).SumAsync(p => (decimal?)p.Amount, ct) ?? 0;
         var fees = await _db.Payments.Where(p => p.Status == PaymentStatus.Paid).SumAsync(p => (decimal?)p.PlatformFee, ct) ?? 0;
+        var net = await _db.Payments.Where(p => p.Status == PaymentStatus.Paid).SumAsync(p => (decimal?)p.NetAmount, ct) ?? 0;
+        var avgTicket = paidCount > 0 ? Math.Round(gross / paidCount, 0) : 0m;
         var pendingPayouts = await _db.PayoutRequests.CountAsync(p => p.Status == PayoutStatus.Pending, ct);
-        return new PlatformStatsDto(merchants, active, payments, gross, fees, pendingPayouts);
+
+        var fromUtc = DateTime.UtcNow.Date.AddDays(-13);
+        var recentPaid = await _db.Payments
+            .Where(p => p.Status == PaymentStatus.Paid
+                        && (p.PaidAtUtc ?? p.CreatedAtUtc) >= fromUtc)
+            .Select(p => new { Day = p.PaidAtUtc ?? p.CreatedAtUtc, p.Amount, p.PlatformFee })
+            .ToListAsync(ct);
+
+        var byDay = recentPaid
+            .GroupBy(p => p.Day.Date)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var last14 = new List<DailyVolumePointDto>(14);
+        for (var i = 0; i < 14; i++)
+        {
+            var day = fromUtc.AddDays(i);
+            byDay.TryGetValue(day, out var rows);
+            last14.Add(new DailyVolumePointDto(
+                day.ToString("yyyy-MM-dd"),
+                rows?.Count ?? 0,
+                rows?.Sum(x => x.Amount) ?? 0,
+                rows?.Sum(x => x.PlatformFee) ?? 0));
+        }
+
+        var statusRows = await _db.Payments
+            .GroupBy(p => p.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count(), Amount = g.Sum(x => x.Amount) })
+            .ToListAsync(ct);
+        var byStatus = statusRows
+            .OrderByDescending(x => x.Count)
+            .Select(x => new NamedCountDto(x.Status.ToString(), x.Count, x.Amount))
+            .ToList();
+
+        var providerRows = await _db.Payments
+            .Where(p => p.Provider != PaymentProviderType.Auto)
+            .GroupBy(p => p.Provider)
+            .Select(g => new { Provider = g.Key, Count = g.Count(), Amount = g.Sum(x => x.Amount) })
+            .ToListAsync(ct);
+        var byProvider = providerRows
+            .OrderByDescending(x => x.Amount)
+            .Select(x => new NamedCountDto(x.Provider.ToString(), x.Count, x.Amount))
+            .ToList();
+
+        return new PlatformStatsDto(
+            merchants, active, pendingMerchants,
+            payments, paidCount, pendingPayments, failedPayments,
+            gross, fees, net, avgTicket, pendingPayouts,
+            last14, byStatus, byProvider);
     }
 }
 

@@ -87,6 +87,7 @@ public record PaymentDto(
     decimal PlatformFee,
     decimal NetAmount,
     bool LedgerApplied,
+    bool IsTest,
     DateTime CreatedAtUtc,
     DateTime? UpdatedAtUtc,
     DateTime? PaidAtUtc,
@@ -96,11 +97,30 @@ public record PaymentDto(
     IReadOnlyList<string>? AvailableProviders,
     IReadOnlyList<PaymentEventDto>? Events = null);
 
+/// <summary>
+/// Lean payment payload for Merchant public API (/v1) and merchant webhooks.
+/// </summary>
+public record PublicPaymentDto(
+    Guid Id,
+    string OrderId,
+    decimal Amount,
+    string Currency,
+    string Status,
+    string Provider,
+    string? Description,
+    string? CheckoutUrl,
+    string Mode,
+    DateTime CreatedAtUtc,
+    DateTime? PaidAtUtc,
+    DateTime? ExpiredAtUtc,
+    string? FailureReason);
+
 public record MerchantPaymentMethodsDto(
     bool FibEnabled,
     bool ZainCashEnabled,
     bool QiEnabled,
     bool SuperQiEnabled,
+    bool AlqasehEnabled,
     IReadOnlyList<string> PlatformEnabled,
     IReadOnlyList<string> EffectiveProviders,
     IReadOnlyList<ProviderCatalogItemDto> Catalog);
@@ -109,7 +129,8 @@ public record UpdateMerchantPaymentMethodsRequest(
     bool? FibEnabled,
     bool? ZainCashEnabled,
     bool? QiEnabled,
-    bool? SuperQiEnabled);
+    bool? SuperQiEnabled,
+    bool? AlqasehEnabled);
 
 public record WalletDto(
     decimal AvailableBalance,
@@ -149,6 +170,7 @@ public record ApiKeyDto(
     string Name,
     string KeyPrefix,
     bool IsActive,
+    bool IsTest,
     DateTime CreatedAtUtc,
     DateTime? LastUsedAtUtc,
     Guid? MerchantPlatformId = null,
@@ -175,8 +197,11 @@ public record MerchantPlatformDto(
     DateTime? ReviewedAtUtc,
     Guid? ApiKeyId,
     string? ApiKeyPrefix,
+    Guid? TestApiKeyId,
+    string? TestApiKeyPrefix,
     bool HasOneTimeApiKey,
-    string? OneTimeApiKey = null);
+    string? OneTimeApiKey = null,
+    string? OneTimeTestApiKey = null);
 
 public record MerchantPlatformDetailDto(
     Guid Id,
@@ -199,6 +224,8 @@ public record MerchantPlatformDetailDto(
     string? ApiKeyPrefix,
     bool ApiKeyIsActive,
     DateTime? ApiKeyCreatedAtUtc,
+    Guid? TestApiKeyId,
+    string? TestApiKeyPrefix,
     bool HasOneTimeApiKey,
     int PaymentsCount,
     decimal PaymentsVolume);
@@ -211,6 +238,11 @@ public record MerchantDto(
     string? ContactPhone,
     string Status,
     decimal CommissionPercent,
+    decimal FibCommissionPercent,
+    decimal ZainCashCommissionPercent,
+    decimal QiCommissionPercent,
+    decimal SuperQiCommissionPercent,
+    decimal AlqasehCommissionPercent,
     string? WebsiteUrl,
     DateTime CreatedAtUtc,
     decimal AvailableBalance);
@@ -231,6 +263,11 @@ public record MerchantDetailDto(
     string? ContactPhone,
     string Status,
     decimal CommissionPercent,
+    decimal FibCommissionPercent,
+    decimal ZainCashCommissionPercent,
+    decimal QiCommissionPercent,
+    decimal SuperQiCommissionPercent,
+    decimal AlqasehCommissionPercent,
     string? WebsiteUrl,
     string? Notes,
     string WebhookSecret,
@@ -238,6 +275,7 @@ public record MerchantDetailDto(
     bool ZainCashEnabled,
     bool QiEnabled,
     bool SuperQiEnabled,
+    bool AlqasehEnabled,
     DateTime CreatedAtUtc,
     DateTime? UpdatedAtUtc,
     decimal AvailableBalance,
@@ -251,6 +289,11 @@ public record MerchantDetailDto(
 public record UpdateMerchantAdminRequest(
     string? Status,
     decimal? CommissionPercent,
+    decimal? FibCommissionPercent,
+    decimal? ZainCashCommissionPercent,
+    decimal? QiCommissionPercent,
+    decimal? SuperQiCommissionPercent,
+    decimal? AlqasehCommissionPercent,
     string? Notes,
     string? BusinessName,
     string? BusinessNameAr,
@@ -261,18 +304,33 @@ public record UpdateMerchantAdminRequest(
     bool? ZainCashEnabled,
     bool? QiEnabled,
     bool? SuperQiEnabled,
+    bool? AlqasehEnabled,
     string? OwnerFullName,
     string? OwnerEmail,
     string? OwnerPhone,
     string? NewPassword);
 public record ReviewPayoutRequest(string Action, string? AdminNote);
+
+public record NamedCountDto(string Key, int Count, decimal Amount = 0);
+
+public record DailyVolumePointDto(string Date, int Count, decimal Volume, decimal Fees);
+
 public record PlatformStatsDto(
     int MerchantsCount,
     int ActiveMerchants,
+    int PendingMerchants,
     int PaymentsCount,
+    int PaidCount,
+    int PendingPayments,
+    int FailedPayments,
     decimal GrossVolume,
     decimal PlatformFees,
-    int PendingPayouts);
+    decimal NetToMerchants,
+    decimal AvgTicket,
+    int PendingPayouts,
+    IReadOnlyList<DailyVolumePointDto> Last14Days,
+    IReadOnlyList<NamedCountDto> ByStatus,
+    IReadOnlyList<NamedCountDto> ByProvider);
 
 public record ProviderConfigDto(
     string Provider,
@@ -311,6 +369,10 @@ public static class EnumMaps
             value.Equals("super-qi", StringComparison.OrdinalIgnoreCase) ||
             value.Equals("alipay", StringComparison.OrdinalIgnoreCase))
             return PaymentProviderType.SuperQi;
+        if (value.Equals("al-qaseh", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("al_qaseh", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("qaseh", StringComparison.OrdinalIgnoreCase))
+            return PaymentProviderType.Alqaseh;
         if (Enum.TryParse<PaymentProviderType>(value, true, out var parsed))
             return parsed;
         throw new ArgumentException($"Unknown provider: {value}");

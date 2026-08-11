@@ -27,11 +27,12 @@
 
       <div class="auth-aside-foot">
         <span>© {{ year }} Fynexpay</span>
-        <div class="auth-providers">
-          <span>FIB</span>
-          <span>ZainCash</span>
-          <span>QI</span>
-          <span>SuperQi</span>
+        <div class="auth-providers" aria-hidden="true">
+          <img src="/providers/fib.svg" alt="" />
+          <img src="/providers/zaincash.svg" alt="" />
+          <img src="/providers/qi.svg" alt="" />
+          <img src="/providers/superqi.svg" alt="" />
+          <img src="/providers/alqaseh.svg" alt="" />
         </div>
       </div>
     </aside>

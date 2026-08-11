@@ -6,5 +6,7 @@ public enum PaymentProviderType
     Fib = 1,
     ZainCash = 2,
     Qi = 3,
-    SuperQi = 4
+    SuperQi = 4,
+    /// <summary>Al Qaseh Payment Gateway — https://docs.alqaseh.com/payment-api</summary>
+    Alqaseh = 5
 }

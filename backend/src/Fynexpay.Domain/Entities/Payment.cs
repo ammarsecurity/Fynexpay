@@ -37,6 +37,10 @@ public class Payment : BaseEntity
     public string? CustomerPhone { get; set; }
     public string? CustomerEmail { get; set; }
     public DateTime? CustomerPhoneVerifiedAtUtc { get; set; }
+    /// <summary>
+    /// When true, provider Test/sandbox URLs and credentials are used and the wallet is not credited.
+    /// </summary>
+    public bool IsTest { get; set; }
 
     public ICollection<PaymentEvent> Events { get; set; } = new List<PaymentEvent>();
 }

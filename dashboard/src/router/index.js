@@ -2,8 +2,9 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
 const routes = [
-  { path: '/login', name: 'login', component: () => import('../views/LoginView.vue'), meta: { guest: true } },
-  { path: '/register', name: 'register', component: () => import('../views/RegisterView.vue'), meta: { guest: true } },
+  { path: '/login', name: 'login', component: () => import('../views/AuthRedirect.vue'), meta: { guest: true } },
+  { path: '/register', name: 'register', component: () => import('../views/AuthRedirect.vue'), meta: { guest: true } },
+  { path: '/auth/handoff', name: 'auth-handoff', component: () => import('../views/AuthHandoff.vue'), meta: { guest: true } },
   {
     path: '/',
     component: () => import('../layouts/AppLayout.vue'),
@@ -47,7 +48,7 @@ const pendingMerchantAllowed = new Set([
 router.beforeEach((to) => {
   const auth = useAuthStore()
   if (to.meta.auth && !auth.isAuthenticated) return '/login'
-  if (to.meta.guest && auth.isAuthenticated) return '/'
+  if (to.meta.guest && auth.isAuthenticated && to.name !== 'auth-handoff') return '/'
   if (to.meta.admin && !auth.isAdmin) return '/merchant'
   if (to.meta.merchant && !auth.isMerchant) return '/admin'
 

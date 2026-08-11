@@ -53,9 +53,12 @@ public class MerchantWebhookSender : IMerchantWebhookSender
             currency = payment.Currency,
             status = payment.Status.ToString(),
             provider = payment.Provider.ToString(),
-            platformFee = payment.PlatformFee,
-            netAmount = payment.NetAmount,
-            paidAtUtc = payment.PaidAtUtc
+            description = payment.Description,
+            checkoutUrl = string.IsNullOrWhiteSpace(payment.CheckoutUrl) ? null : payment.CheckoutUrl,
+            createdAtUtc = payment.CreatedAtUtc,
+            paidAtUtc = payment.PaidAtUtc,
+            expiredAtUtc = payment.ExpiredAtUtc,
+            failureReason = payment.FailureReason
         });
 
         var signature = ComputeHmac(payload, payment.Merchant.WebhookSecret);

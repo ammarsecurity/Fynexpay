@@ -12,7 +12,7 @@ import { useProviders } from '../composables/useProviders'
 
 const props = defineProps({
   provider: { type: String, default: '' },
-  showName: { type: Boolean, default: true },
+  showName: { type: Boolean, default: false },
   size: { type: String, default: 'md' }
 })
 

@@ -9,7 +9,8 @@ const DEFAULT_LOGOS = {
   fib: '/providers/fib.svg',
   zaincash: '/providers/zaincash.svg',
   qi: '/providers/qi.svg',
-  superqi: '/providers/superqi.svg'
+  superqi: '/providers/superqi.svg',
+  alqaseh: '/providers/alqaseh.svg'
 }
 
 export function defaultLogoPath(key) {

@@ -696,7 +696,7 @@ html[dir="ltr"] .side-item.active { box-shadow: inset -3px 0 0 var(--brand-secon
   flex-shrink: 0;
 }
 .side-ico.wa { background: rgba(37, 211, 102, 0.14); color: #128c7e; }
-.side-ico.mail { background: rgba(108, 60, 236, 0.12); color: var(--brand-secondary); }
+.side-ico.mail { background: rgba(3, 24, 56, 0.12); color: var(--brand-secondary); }
 .side-ico.bell { background: rgba(14, 165, 233, 0.12); color: #0284c7; }
 
 .stack { display: grid; gap: 16px; }
@@ -764,9 +764,9 @@ html[dir="ltr"] .side-item.active { box-shadow: inset -3px 0 0 var(--brand-secon
 .channel-card strong { display: block; font-size: 14px; }
 .channel-card span { color: var(--muted); font-size: 12px; line-height: 1.55; }
 .channel-card.active {
-  border-color: rgba(108, 60, 236, 0.45);
-  box-shadow: 0 0 0 3px rgba(108, 60, 236, 0.1);
-  background: rgba(108, 60, 236, 0.04);
+  border-color: rgba(3, 24, 56, 0.45);
+  box-shadow: 0 0 0 3px rgba(3, 24, 56, 0.1);
+  background: rgba(3, 24, 56, 0.04);
 }
 
 .policy-list { display: grid; gap: 10px; margin-top: 16px; }
@@ -806,8 +806,8 @@ textarea {
 }
 textarea:focus, .panel input:focus {
   outline: none;
-  border-color: rgba(108, 60, 236, 0.45);
-  box-shadow: 0 0 0 3px rgba(108, 60, 236, 0.1);
+  border-color: rgba(3, 24, 56, 0.45);
+  box-shadow: 0 0 0 3px rgba(3, 24, 56, 0.1);
   background: #fff;
 }
 .code-area {

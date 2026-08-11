@@ -47,8 +47,8 @@
               <strong>{{ detail.paymentsCount }}</strong>
             </div>
             <div class="metric">
-              <span>{{ $t('merchants.commission') }}</span>
-              <strong>{{ detail.commissionPercent }}%</strong>
+              <span>{{ $t('merchants.commissions') }}</span>
+              <strong>{{ commissionSummary }}</strong>
             </div>
           </div>
 
@@ -91,11 +91,21 @@
           </section>
 
           <section class="panel">
+            <h3>{{ $t('merchants.sectionCommissions') }}</h3>
+            <div class="provider-grid">
+              <div v-for="c in commissionView" :key="c.key" class="provider-card on">
+                <ProviderBadge :provider="c.provider" :show-name="false" />
+                <small>{{ formatPct(c.rate) }}%</small>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
             <h3>{{ $t('merchants.sectionProviders') }}</h3>
             <div class="provider-grid">
               <div v-for="p in providerView" :key="p.key" class="provider-card" :class="{ on: p.on }">
                 <span class="dot" />
-                <strong>{{ p.label }}</strong>
+                <ProviderBadge :provider="p.provider" :show-name="false" />
                 <small>{{ p.on ? $t('common.enabled') : $t('common.disabled') }}</small>
               </div>
             </div>
@@ -155,10 +165,6 @@
                 <input v-model="form.websiteUrl" />
               </label>
               <label class="field">
-                <span>{{ $t('merchants.commission') }}</span>
-                <input v-model.number="form.commissionPercent" type="number" min="0" max="100" step="0.1" required />
-              </label>
-              <label class="field">
                 <span>{{ $t('common.status') }}</span>
                 <select v-model="form.status">
                   <option value="Active">{{ $t('status.Active') }}</option>
@@ -169,6 +175,20 @@
               <label class="field full">
                 <span>{{ $t('merchants.notes') }}</span>
                 <textarea v-model="form.notes" rows="3" />
+              </label>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h3>{{ $t('merchants.sectionCommissions') }}</h3>
+            <p class="muted commission-hint">{{ $t('merchants.commissionsHint') }}</p>
+            <div class="form-grid">
+              <label class="field" v-for="c in commissionEdit" :key="c.key">
+                <span class="field-logo"><ProviderBadge :provider="c.provider" :show-name="false" /></span>
+                <div class="pct-input">
+                  <input v-model.number="form[c.key]" type="number" min="0" max="100" step="0.1" required />
+                  <span>%</span>
+                </div>
               </label>
             </div>
           </section>
@@ -185,7 +205,7 @@
                 @click="form[p.key] = !form[p.key]"
               >
                 <span class="dot" />
-                <strong>{{ p.label }}</strong>
+                <ProviderBadge :provider="p.provider" :show-name="false" />
                 <small>{{ form[p.key] ? $t('common.enabled') : $t('common.disabled') }}</small>
               </button>
             </div>
@@ -237,6 +257,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '../api'
+import ProviderBadge from './ProviderBadge.vue'
 import { useDialog } from '../composables/useDialog'
 
 const props = defineProps({
@@ -264,12 +285,18 @@ const form = reactive({
   contactPhone: '',
   websiteUrl: '',
   commissionPercent: 0,
+  fibCommissionPercent: 2.5,
+  zainCashCommissionPercent: 2.5,
+  qiCommissionPercent: 2.5,
+  superQiCommissionPercent: 2.5,
+  alqasehCommissionPercent: 2.5,
   status: 'Active',
   notes: '',
   fibEnabled: true,
   zainCashEnabled: true,
   qiEnabled: true,
   superQiEnabled: true,
+  alqasehEnabled: true,
   ownerFullName: '',
   ownerEmail: '',
   ownerPhone: '',
@@ -281,23 +308,59 @@ const initials = computed(() => {
   return name.trim().slice(0, 1).toUpperCase()
 })
 
+const commissionView = computed(() => {
+  const d = detail.value
+  if (!d) return []
+  return [
+    { key: 'fib', provider: 'Fib', rate: d.fibCommissionPercent ?? d.commissionPercent },
+    { key: 'zain', provider: 'ZainCash', rate: d.zainCashCommissionPercent ?? d.commissionPercent },
+    { key: 'qi', provider: 'Qi', rate: d.qiCommissionPercent ?? d.commissionPercent },
+    { key: 'superqi', provider: 'SuperQi', rate: d.superQiCommissionPercent ?? d.commissionPercent },
+    { key: 'alqaseh', provider: 'Alqaseh', rate: d.alqasehCommissionPercent ?? d.commissionPercent }
+  ]
+})
+
+const commissionSummary = computed(() => {
+  const rates = commissionView.value.map((c) => Number(c.rate ?? 0))
+  if (!rates.length) return '—'
+  const min = Math.min(...rates)
+  const max = Math.max(...rates)
+  if (min === max) return `${formatPct(min)}%`
+  return `${formatPct(min)}% – ${formatPct(max)}%`
+})
+
+const commissionEdit = [
+  { key: 'fibCommissionPercent', provider: 'Fib' },
+  { key: 'zainCashCommissionPercent', provider: 'ZainCash' },
+  { key: 'qiCommissionPercent', provider: 'Qi' },
+  { key: 'superQiCommissionPercent', provider: 'SuperQi' },
+  { key: 'alqasehCommissionPercent', provider: 'Alqaseh' }
+]
+
 const providerView = computed(() => {
   const d = detail.value
   if (!d) return []
   return [
-    { key: 'fib', label: 'FIB', on: d.fibEnabled },
-    { key: 'zain', label: 'ZainCash', on: d.zainCashEnabled },
-    { key: 'qi', label: 'Qi', on: d.qiEnabled },
-    { key: 'superqi', label: 'SuperQi', on: d.superQiEnabled }
+    { key: 'fib', provider: 'Fib', on: d.fibEnabled },
+    { key: 'zain', provider: 'ZainCash', on: d.zainCashEnabled },
+    { key: 'qi', provider: 'Qi', on: d.qiEnabled },
+    { key: 'superqi', provider: 'SuperQi', on: d.superQiEnabled },
+    { key: 'alqaseh', provider: 'Alqaseh', on: d.alqasehEnabled }
   ]
 })
 
 const providerEdit = [
-  { key: 'fibEnabled', label: 'FIB' },
-  { key: 'zainCashEnabled', label: 'ZainCash' },
-  { key: 'qiEnabled', label: 'Qi' },
-  { key: 'superQiEnabled', label: 'SuperQi' }
+  { key: 'fibEnabled', provider: 'Fib' },
+  { key: 'zainCashEnabled', provider: 'ZainCash' },
+  { key: 'qiEnabled', provider: 'Qi' },
+  { key: 'superQiEnabled', provider: 'SuperQi' },
+  { key: 'alqasehEnabled', provider: 'Alqaseh' }
 ]
+
+function formatPct(v) {
+  const n = Number(v ?? 0)
+  return Number.isInteger(n) ? String(n) : n.toFixed(1)
+}
 
 function close() { emit('close') }
 
@@ -321,12 +384,18 @@ function fillForm(d) {
   form.contactPhone = d.contactPhone || ''
   form.websiteUrl = d.websiteUrl || ''
   form.commissionPercent = d.commissionPercent ?? 0
+  form.fibCommissionPercent = d.fibCommissionPercent ?? d.commissionPercent ?? 0
+  form.zainCashCommissionPercent = d.zainCashCommissionPercent ?? d.commissionPercent ?? 0
+  form.qiCommissionPercent = d.qiCommissionPercent ?? d.commissionPercent ?? 0
+  form.superQiCommissionPercent = d.superQiCommissionPercent ?? d.commissionPercent ?? 0
+  form.alqasehCommissionPercent = d.alqasehCommissionPercent ?? d.commissionPercent ?? 0
   form.status = d.status || 'Active'
   form.notes = d.notes || ''
   form.fibEnabled = !!d.fibEnabled
   form.zainCashEnabled = !!d.zainCashEnabled
   form.qiEnabled = !!d.qiEnabled
   form.superQiEnabled = !!d.superQiEnabled
+  form.alqasehEnabled = !!d.alqasehEnabled
   form.ownerFullName = owner?.fullName || ''
   form.ownerEmail = owner?.email || ''
   form.ownerPhone = owner?.phone || ''
@@ -358,19 +427,34 @@ async function save() {
   saveError.value = ''
   saveOk.value = false
   try {
+    const rates = [
+      form.fibCommissionPercent,
+      form.zainCashCommissionPercent,
+      form.qiCommissionPercent,
+      form.superQiCommissionPercent,
+      form.alqasehCommissionPercent
+    ].map((n) => Number(n ?? 0))
+    const avg = rates.reduce((a, b) => a + b, 0) / (rates.length || 1)
+
     await api.patch(`/api/admin/merchants/${props.merchantId}`, {
       businessName: form.businessName,
       businessNameAr: form.businessNameAr || null,
       contactEmail: form.contactEmail,
       contactPhone: form.contactPhone || null,
       websiteUrl: form.websiteUrl || null,
-      commissionPercent: form.commissionPercent,
+      commissionPercent: Math.round(avg * 100) / 100,
+      fibCommissionPercent: form.fibCommissionPercent,
+      zainCashCommissionPercent: form.zainCashCommissionPercent,
+      qiCommissionPercent: form.qiCommissionPercent,
+      superQiCommissionPercent: form.superQiCommissionPercent,
+      alqasehCommissionPercent: form.alqasehCommissionPercent,
       status: form.status,
       notes: form.notes || null,
       fibEnabled: form.fibEnabled,
       zainCashEnabled: form.zainCashEnabled,
       qiEnabled: form.qiEnabled,
       superQiEnabled: form.superQiEnabled,
+      alqasehEnabled: form.alqasehEnabled,
       ownerFullName: form.ownerFullName || null,
       ownerEmail: form.ownerEmail || null,
       ownerPhone: form.ownerPhone || null,
@@ -438,7 +522,7 @@ watch(
   max-height: min(92vh, 960px);
   overflow: auto;
   background:
-    radial-gradient(1200px 280px at 100% -10%, rgba(108, 60, 236, 0.12), transparent 55%),
+    radial-gradient(1200px 280px at 100% -10%, rgba(3, 24, 56, 0.12), transparent 55%),
     #fff;
   border-radius: 22px;
   border: 1px solid var(--line);
@@ -475,7 +559,7 @@ watch(
   font-size: 1.15rem;
   color: #fff;
   background: linear-gradient(145deg, var(--brand), var(--brand-secondary));
-  box-shadow: 0 10px 24px rgba(108, 60, 236, 0.28);
+  box-shadow: 0 10px 24px rgba(3, 24, 56, 0.28);
   flex-shrink: 0;
 }
 .head-copy { min-width: 0; }
@@ -665,7 +749,7 @@ dd {
 }
 .provider-card.on {
   background: var(--brand-soft);
-  border-color: rgba(108, 60, 236, 0.28);
+  border-color: rgba(3, 24, 56, 0.28);
   color: var(--brand);
 }
 .provider-card .dot {
@@ -684,7 +768,7 @@ dd {
   transition: 0.15s ease;
 }
 .provider-card.clickable:hover {
-  border-color: rgba(108, 60, 236, 0.4);
+  border-color: rgba(3, 24, 56, 0.4);
   transform: translateY(-1px);
 }
 
@@ -756,6 +840,17 @@ dd {
   font-weight: 700;
 }
 .form-grid .field.full { grid-column: 1 / -1; }
+.commission-hint { margin: 0 0 12px; font-size: 0.85rem; }
+.pct-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pct-input input { flex: 1; }
+.pct-input span {
+  font-weight: 800;
+  color: var(--muted);
+}
 .form-grid input,
 .form-grid select,
 .form-grid textarea {
@@ -771,8 +866,8 @@ dd {
 .form-grid input:focus,
 .form-grid select:focus,
 .form-grid textarea:focus {
-  border-color: rgba(108, 60, 236, 0.55);
-  box-shadow: 0 0 0 4px rgba(108, 60, 236, 0.14);
+  border-color: rgba(3, 24, 56, 0.55);
+  box-shadow: 0 0 0 4px rgba(3, 24, 56, 0.14);
 }
 .form-footer {
   position: sticky;

@@ -88,7 +88,8 @@
         <section class="panel">
           <h3>{{ $t('platforms.sectionApiKey') }}</h3>
           <dl class="kv">
-            <div><dt>{{ $t('platforms.keyPrefix') }}</dt><dd class="mono" dir="ltr">{{ detail.apiKeyPrefix || '—' }}</dd></div>
+            <div><dt>{{ $t('platforms.liveKey') }}</dt><dd class="mono" dir="ltr">{{ detail.apiKeyPrefix || '—' }}</dd></div>
+            <div><dt>{{ $t('platforms.testKey') }}</dt><dd class="mono" dir="ltr">{{ detail.testApiKeyPrefix || '—' }}</dd></div>
             <div><dt>{{ $t('platforms.apiKeyStatus') }}</dt><dd>{{ detail.apiKeyIsActive ? $t('common.enabled') : $t('common.disabled') }}</dd></div>
             <div><dt>{{ $t('platforms.keyCreatedAt') }}</dt><dd>{{ when(detail.apiKeyCreatedAtUtc) }}</dd></div>
             <div><dt>{{ $t('platforms.platformId') }}</dt><dd class="mono id-break">{{ detail.id }}</dd></div>
@@ -108,7 +109,8 @@
             <button class="btn secondary" type="button" :disabled="reviewing" @click="review('suspend')">{{ $t('platforms.suspend') }}</button>
             <button class="btn danger" type="button" :disabled="reviewing" @click="review('reject')">{{ $t('platforms.reject') }}</button>
           </div>
-          <p v-if="oneTimeKey" class="key-hint mono" dir="ltr">API: {{ oneTimeKey }}</p>
+          <p v-if="oneTimeKey" class="key-hint mono" dir="ltr">live: {{ oneTimeKey }}</p>
+          <p v-if="oneTimeTestKey" class="key-hint mono" dir="ltr">test: {{ oneTimeTestKey }}</p>
         </section>
       </div>
     </div>
@@ -135,6 +137,7 @@ const reviewing = ref(false)
 const reviewMsg = ref('')
 const reviewError = ref('')
 const oneTimeKey = ref('')
+const oneTimeTestKey = ref('')
 
 const initials = computed(() => {
   const n = detail.value?.name || '?'
@@ -173,6 +176,7 @@ async function load() {
   reviewMsg.value = ''
   reviewError.value = ''
   oneTimeKey.value = ''
+  oneTimeTestKey.value = ''
   try {
     const { data } = await api.get(`/api/admin/platforms/${props.platformId}`)
     detail.value = data
@@ -196,6 +200,7 @@ async function review(action) {
     })
     if (data.oneTimeApiKey) {
       oneTimeKey.value = data.oneTimeApiKey
+      oneTimeTestKey.value = data.oneTimeTestApiKey || ''
       reviewMsg.value = t('platforms.approvedWithKey')
     } else {
       reviewMsg.value = t('platforms.reviewOk')
@@ -239,7 +244,7 @@ watch(
   max-height: min(92vh, 960px);
   overflow: auto;
   background:
-    radial-gradient(1200px 280px at 100% -10%, rgba(108, 60, 236, 0.12), transparent 55%),
+    radial-gradient(1200px 280px at 100% -10%, rgba(3, 24, 56, 0.12), transparent 55%),
     #fff;
   border-radius: 22px;
   border: 1px solid var(--line);
