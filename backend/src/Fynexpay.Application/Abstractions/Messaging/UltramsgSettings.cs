@@ -27,6 +27,8 @@ public class UltramsgSettings
         "رمز التحقق من Fynexpay: {code}\nصالح لمدة 5 دقائق. لا تشاركه مع أحد.";
     public string CheckoutMessage { get; set; } =
         "رمز تأكيد الدفع عبر Fynexpay: {code}\nصالح لمدة 5 دقائق.";
+    public string ProfileChangeMessage { get; set; } =
+        "رمز تأكيد تعديل الملف الشخصي في Fynexpay: {code}\nصالح لمدة 5 دقائق. لا تشاركه مع أحد.";
 
     // —— Email (SMTP) ——
     public bool EmailEnabled { get; set; }

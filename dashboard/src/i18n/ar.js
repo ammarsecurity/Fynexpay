@@ -83,7 +83,24 @@ export default {
     tryPayment: 'تجربة دفع',
     newPayment: '+ دفعة جديدة',
     manageMerchants: '+ إدارة التجار',
-    searchPlaceholder: 'ابحث في المدفوعات، التجار، الطلبات...'
+    searchPlaceholder: 'ابحث في المدفوعات، التجار، الطلبات...',
+    profile: 'الملف الشخصي'
+  },
+  profile: {
+    title: 'الملف الشخصي',
+    adminSub: 'عدّل بيانات حساب الإدارة مباشرة.',
+    merchantSub: 'عدّل بياناتك بعد تأكيد واتساب.',
+    phonePh: '07xxxxxxxxx أو +9647…',
+    save: 'حفظ التغييرات',
+    saved: 'تم حفظ التغييرات بنجاح',
+    saveFail: 'تعذّر حفظ التغييرات',
+    loadFail: 'تعذّر تحميل الملف الشخصي',
+    whatsappHint: 'أي تعديل على بيانات التاجر يتطلب رمز تأكيد يُرسل عبر واتساب.',
+    sendOtp: 'إرسال رمز واتساب',
+    otpSub: 'أدخل الرمز المرسل إلى واتساب {phone}',
+    confirmSave: 'تأكيد وحفظ',
+    back: 'تعديل البيانات',
+    otpFail: 'فشل التحقق أو الإرسال'
   },
   auth: {
     loginTitle: 'تسجيل الدخول',

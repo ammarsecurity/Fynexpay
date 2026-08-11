@@ -46,6 +46,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12"/><path d="m8 11 4 4 4-4"/><path d="M5 19h14"/></svg>
           {{ $t('nav.payouts') }}
         </RouterLink>
+        <RouterLink to="/merchant/profile">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.5"/><path d="M5 19a7 7 0 0 1 14 0"/></svg>
+          {{ $t('nav.profile') }}
+        </RouterLink>
       </nav>
 
       <nav class="nav" v-if="auth.isAdmin" @click="onNavClick">
@@ -81,6 +85,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/></svg>
           {{ $t('nav.landing') }}
         </RouterLink>
+        <RouterLink to="/admin/profile">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.5"/><path d="M5 19a7 7 0 0 1 14 0"/></svg>
+          {{ $t('nav.profile') }}
+        </RouterLink>
       </nav>
 
       <div class="sidebar-spacer"></div>
@@ -102,13 +110,13 @@
         <RouterLink class="btn" to="/admin/providers" @click="closeNav">{{ $t('nav.setupProviders') }}</RouterLink>
       </div>
 
-      <div class="user-chip">
+      <RouterLink class="user-chip" :to="auth.isAdmin ? '/admin/profile' : '/merchant/profile'" @click="closeNav">
         <div class="avatar">{{ initials }}</div>
         <div class="meta">
           <div class="name">{{ auth.user?.fullName || 'User' }}</div>
           <div class="email">{{ auth.user?.email }}</div>
         </div>
-      </div>
+      </RouterLink>
       <button class="btn secondary logout-btn" type="button" @click="logout">{{ $t('common.logout') }}</button>
     </aside>
 

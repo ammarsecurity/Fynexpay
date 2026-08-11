@@ -80,6 +80,7 @@ public class MerchantDashboardController : ControllerBase
     private readonly PayoutService _payouts;
     private readonly PaymentService _payments;
     private readonly NotificationService _notifications;
+    private readonly ProfileService _profiles;
     private readonly IAppDbContext _db;
 
     public MerchantDashboardController(
@@ -89,6 +90,7 @@ public class MerchantDashboardController : ControllerBase
         PayoutService payouts,
         PaymentService payments,
         NotificationService notifications,
+        ProfileService profiles,
         IAppDbContext db)
     {
         _merchants = merchants;
@@ -97,6 +99,7 @@ public class MerchantDashboardController : ControllerBase
         _payouts = payouts;
         _payments = payments;
         _notifications = notifications;
+        _profiles = profiles;
         _db = db;
     }
 
@@ -112,6 +115,28 @@ public class MerchantDashboardController : ControllerBase
 
     [HttpGet("me")]
     public async Task<ActionResult<MerchantDto>> Me(CancellationToken ct) => Ok(await _merchants.GetMerchantAsync(MerchantId, ct));
+
+    [HttpGet("profile")]
+    public async Task<ActionResult<UserProfileDto>> Profile(CancellationToken ct)
+        => Ok(await _profiles.GetAsync(UserId, ct));
+
+    [HttpPost("profile/request-otp")]
+    public async Task<ActionResult<OtpSendResultDto>> RequestProfileOtp([FromBody] UpdateMerchantProfileRequest request, CancellationToken ct)
+    {
+        try { return Ok(await _profiles.RequestMerchantChangeAsync(UserId, request, ct)); }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+    }
+
+    [HttpPost("profile/confirm")]
+    public async Task<ActionResult<AuthResponse>> ConfirmProfile([FromBody] ConfirmProfileOtpRequest request, CancellationToken ct)
+    {
+        try { return Ok(await _profiles.ConfirmMerchantChangeAsync(UserId, request, ct)); }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+    }
 
     [HttpGet("wallet")]
     public async Task<ActionResult<WalletDto>> Wallet(CancellationToken ct) => Ok(await _wallets.GetAsync(MerchantId, ct));
@@ -445,6 +470,7 @@ public class AdminController : ControllerBase
     private readonly IEmailSender _emailSender;
     private readonly NotificationService _notifications;
     private readonly INotificationSettingsService _notificationSettings;
+    private readonly ProfileService _profiles;
 
     public AdminController(
         MerchantAdminService merchants,
@@ -458,7 +484,8 @@ public class AdminController : ControllerBase
         IUltramsgClient ultramsg,
         IEmailSender emailSender,
         NotificationService notifications,
-        INotificationSettingsService notificationSettings)
+        INotificationSettingsService notificationSettings,
+        ProfileService profiles)
     {
         _merchants = merchants;
         _platforms = platforms;
@@ -472,9 +499,23 @@ public class AdminController : ControllerBase
         _emailSender = emailSender;
         _notifications = notifications;
         _notificationSettings = notificationSettings;
+        _profiles = profiles;
     }
 
     private Guid AdminUserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+    [HttpGet("profile")]
+    public async Task<ActionResult<UserProfileDto>> Profile(CancellationToken ct)
+        => Ok(await _profiles.GetAsync(AdminUserId, ct));
+
+    [HttpPut("profile")]
+    public async Task<ActionResult<AuthResponse>> UpdateProfile([FromBody] UpdateAdminProfileRequest request, CancellationToken ct)
+    {
+        try { return Ok(await _profiles.UpdateAdminAsync(AdminUserId, request, ct)); }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+    }
 
     [HttpGet("stats")]
     public async Task<ActionResult<PlatformStatsDto>> Stats(CancellationToken ct) => Ok(await _merchants.GetStatsAsync(ct));

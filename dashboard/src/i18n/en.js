@@ -83,7 +83,24 @@ export default {
     tryPayment: 'Try a payment',
     newPayment: '+ New payment',
     manageMerchants: '+ Manage merchants',
-    searchPlaceholder: 'Search payments, merchants, payouts...'
+    searchPlaceholder: 'Search payments, merchants, payouts...',
+    profile: 'Profile'
+  },
+  profile: {
+    title: 'Profile',
+    adminSub: 'Update your admin account details directly.',
+    merchantSub: 'Update your details after WhatsApp confirmation.',
+    phonePh: '07xxxxxxxxx or +9647…',
+    save: 'Save changes',
+    saved: 'Changes saved successfully',
+    saveFail: 'Could not save changes',
+    loadFail: 'Could not load profile',
+    whatsappHint: 'Any merchant profile change requires a WhatsApp verification code.',
+    sendOtp: 'Send WhatsApp code',
+    otpSub: 'Enter the code sent to WhatsApp {phone}',
+    confirmSave: 'Confirm and save',
+    back: 'Edit details',
+    otpFail: 'Verification or delivery failed'
   },
   auth: {
     loginTitle: 'Sign in',

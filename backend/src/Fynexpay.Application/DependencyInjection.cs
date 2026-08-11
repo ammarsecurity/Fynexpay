@@ -15,6 +15,7 @@ public static class DependencyInjection
         services.AddScoped<MerchantPlatformService>();
         services.AddScoped<LandingContentService>();
         services.AddScoped<OtpService>();
+        services.AddScoped<ProfileService>();
         services.AddScoped<NotificationService>();
         return services;
     }

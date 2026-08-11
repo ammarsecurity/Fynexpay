@@ -19,6 +19,7 @@ const routes = [
       { path: 'merchant/platforms', name: 'merchant-platforms', component: () => import('../views/merchant/Platforms.vue'), meta: { merchant: true } },
       { path: 'merchant/keys', name: 'merchant-keys', component: () => import('../views/merchant/ApiKeys.vue'), meta: { merchant: true } },
       { path: 'merchant/payouts', name: 'merchant-payouts', component: () => import('../views/merchant/Payouts.vue'), meta: { merchant: true } },
+      { path: 'merchant/profile', name: 'merchant-profile', component: () => import('../views/merchant/Profile.vue'), meta: { merchant: true } },
       { path: 'admin', name: 'admin-overview', component: () => import('../views/admin/Overview.vue'), meta: { admin: true } },
       { path: 'admin/merchants', name: 'admin-merchants', component: () => import('../views/admin/Merchants.vue'), meta: { admin: true } },
       { path: 'admin/platforms', name: 'admin-platforms', component: () => import('../views/admin/Platforms.vue'), meta: { admin: true } },
@@ -26,7 +27,8 @@ const routes = [
       { path: 'admin/payouts', name: 'admin-payouts', component: () => import('../views/admin/Payouts.vue'), meta: { admin: true } },
       { path: 'admin/providers', name: 'admin-providers', component: () => import('../views/admin/Providers.vue'), meta: { admin: true } },
       { path: 'admin/ultramsg', name: 'admin-ultramsg', component: () => import('../views/admin/Ultramsg.vue'), meta: { admin: true } },
-      { path: 'admin/landing', name: 'admin-landing', component: () => import('../views/admin/Landing.vue'), meta: { admin: true } }
+      { path: 'admin/landing', name: 'admin-landing', component: () => import('../views/admin/Landing.vue'), meta: { admin: true } },
+      { path: 'admin/profile', name: 'admin-profile', component: () => import('../views/admin/Profile.vue'), meta: { admin: true } }
     ]
   }
 ]
@@ -42,6 +44,7 @@ const pendingMerchantAllowed = new Set([
   'merchant-docs',
   'merchant-methods',
   'merchant-payments',
+  'merchant-profile',
   'home'
 ])
 

@@ -207,6 +207,13 @@ html[dir="ltr"] .sidebar {
   border-radius: 14px;
   border: 1px solid var(--line);
   background: #fff;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+a.user-chip:hover {
+  border-color: color-mix(in srgb, var(--brand) 35%, var(--line));
+  box-shadow: 0 6px 18px rgba(3, 24, 56, 0.06);
 }
 .avatar {
   width: 40px;

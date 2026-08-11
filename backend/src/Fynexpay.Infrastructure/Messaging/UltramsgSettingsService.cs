@@ -116,6 +116,8 @@ public class UltramsgSettingsService : IUltramsgSettingsService
             s.MerchantRegisterMessage = "رمز التحقق من Fynexpay: {code}\nصالح لمدة 5 دقائق. لا تشاركه مع أحد.";
         if (string.IsNullOrWhiteSpace(s.CheckoutMessage))
             s.CheckoutMessage = "رمز تأكيد الدفع عبر Fynexpay: {code}\nصالح لمدة 5 دقائق.";
+        if (string.IsNullOrWhiteSpace(s.ProfileChangeMessage))
+            s.ProfileChangeMessage = "رمز تأكيد تعديل الملف الشخصي في Fynexpay: {code}\nصالح لمدة 5 دقائق. لا تشاركه مع أحد.";
         if (string.IsNullOrWhiteSpace(s.EmailRegisterSubject))
             s.EmailRegisterSubject = "رمز التحقق — Fynexpay";
         if (string.IsNullOrWhiteSpace(s.EmailCheckoutSubject))
@@ -138,6 +140,7 @@ public class UltramsgSettingsService : IUltramsgSettingsService
         DefaultCountryCode = s.DefaultCountryCode,
         MerchantRegisterMessage = s.MerchantRegisterMessage,
         CheckoutMessage = s.CheckoutMessage,
+        ProfileChangeMessage = s.ProfileChangeMessage,
         EmailEnabled = s.EmailEnabled,
         SmtpHost = s.SmtpHost,
         SmtpPort = s.SmtpPort,

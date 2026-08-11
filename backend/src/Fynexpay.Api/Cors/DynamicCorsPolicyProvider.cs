@@ -17,14 +17,16 @@ public class DynamicCorsPolicyProvider : ICorsPolicyProvider
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IHostEnvironment _env;
+    private readonly IConfiguration _config;
     private readonly object _lock = new();
     private List<string> _cachedOrigins = new(DevOrigins);
     private DateTime _cachedAtUtc = DateTime.MinValue;
 
-    public DynamicCorsPolicyProvider(IServiceScopeFactory scopeFactory, IHostEnvironment env)
+    public DynamicCorsPolicyProvider(IServiceScopeFactory scopeFactory, IHostEnvironment env, IConfiguration config)
     {
         _scopeFactory = scopeFactory;
         _env = env;
+        _config = config;
     }
 
     public async Task<CorsPolicy?> GetPolicyAsync(HttpContext context, string? policyName)
@@ -77,6 +79,13 @@ public class DynamicCorsPolicyProvider : ICorsPolicyProvider
                 origins.Add(o);
         }
 
+        var allowed = _config["App:AllowedOrigins"];
+        if (!string.IsNullOrWhiteSpace(allowed))
+        {
+            foreach (var part in allowed.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                origins.Add(part);
+        }
+
         foreach (var domain in domains)
         {
             if (domain.StartsWith("localhost", StringComparison.OrdinalIgnoreCase)
@@ -94,7 +103,7 @@ public class DynamicCorsPolicyProvider : ICorsPolicyProvider
 
         lock (_lock)
         {
-            _cachedOrigins = origins.Count > 0 ? origins.ToList() : DevOrigins.ToList();
+            _cachedOrigins = origins.Count > 0 ? origins.ToList() : (_env.IsDevelopment() ? DevOrigins.ToList() : new List<string>());
             _cachedAtUtc = DateTime.UtcNow;
         }
     }

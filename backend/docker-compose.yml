@@ -1,0 +1,25 @@
+# Fynexpay API — uses host network so container can reach aaPanel MySQL on 127.0.0.1
+# Unique project name avoids clashing with other */backend compose stacks on the same host.
+name: fynexpay
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fynexpay-api
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - .env.docker
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://127.0.0.1:5088
+    volumes:
+      - ${UPLOADS_DIR:-/www/wwwroot/api.fynexpay.net/uploads}:/app/wwwroot/uploads
+      - ${LOGS_DIR:-/www/wwwroot/api.fynexpay.net/logs}:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5088/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 45s

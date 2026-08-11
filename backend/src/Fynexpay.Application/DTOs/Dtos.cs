@@ -28,6 +28,30 @@ public record AuthResponse(
     Guid? MerchantId,
     string? MerchantStatus);
 
+public record UserProfileDto(
+    Guid UserId,
+    string Email,
+    string FullName,
+    string? Phone,
+    string Role,
+    Guid? MerchantId,
+    string? MerchantStatus,
+    string? BusinessName,
+    string? BusinessNameAr,
+    string? WebsiteUrl);
+
+public record UpdateAdminProfileRequest(string FullName, string Email, string? Phone);
+
+public record UpdateMerchantProfileRequest(
+    string FullName,
+    string Email,
+    string? Phone,
+    string BusinessName,
+    string? BusinessNameAr,
+    string? WebsiteUrl);
+
+public record ConfirmProfileOtpRequest(Guid ChallengeId, string Code);
+
 public record CreatePaymentRequest(
     decimal Amount,
     string? Currency,

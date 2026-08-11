@@ -251,6 +251,94 @@ public class OtpService
         return payment?.CustomerPhoneVerifiedAtUtc != null;
     }
 
+    public async Task<OtpSendResult> SendProfileChangeOtpAsync(
+        Guid userId,
+        string email,
+        string fullName,
+        string phoneRaw,
+        string businessName,
+        string? businessNameAr,
+        string? websiteUrl,
+        CancellationToken ct = default)
+    {
+        var settings = await _settings.GetAsync(ct);
+        EnsureWhatsAppForProfile(settings);
+
+        var phone = NormalizePhone(phoneRaw, settings.DefaultCountryCode);
+        await EnforceSendCooldownAsync(OtpPurpose.ProfileChange, phone, null, ct);
+
+        var payload = JsonSerializer.Serialize(new PendingProfileChange(
+            userId,
+            email,
+            fullName,
+            phone,
+            businessName,
+            businessNameAr,
+            websiteUrl
+        ), JsonOpts);
+
+        var code = GenerateCode();
+        var challenge = new OtpChallenge
+        {
+            Purpose = OtpPurpose.ProfileChange,
+            PhoneE164 = phone,
+            TargetEmail = email,
+            CodeHash = HashCode(code),
+            ExpiresAtUtc = DateTime.UtcNow.AddMinutes(5),
+            LastSentAtUtc = DateTime.UtcNow,
+            PayloadJson = payload
+        };
+        _db.OtpChallenges.Add(challenge);
+        await _db.SaveChangesAsync(ct);
+
+        var via = await DeliverWhatsAppAsync(settings, phone, code, settings.ProfileChangeMessage, ct);
+        return new OtpSendResult(challenge.Id, MaskPhone(phone), 300, DevCode(code), via);
+    }
+
+    public async Task<PendingProfileChange> ConsumeProfileChangeChallengeAsync(
+        Guid challengeId,
+        string code,
+        CancellationToken ct = default)
+    {
+        var challenge = await LoadActiveChallengeAsync(challengeId, OtpPurpose.ProfileChange, ct);
+        await VerifyCodeAsync(challenge, code, ct);
+        challenge.Consumed = true;
+        await _db.SaveChangesAsync(ct);
+
+        if (string.IsNullOrWhiteSpace(challenge.PayloadJson))
+            throw new InvalidOperationException("بيانات التعديل غير مكتملة");
+
+        return JsonSerializer.Deserialize<PendingProfileChange>(challenge.PayloadJson, JsonOpts)
+            ?? throw new InvalidOperationException("بيانات التعديل غير مكتملة");
+    }
+
+    private async Task<string> DeliverWhatsAppAsync(
+        UltramsgSettings settings,
+        string phone,
+        string code,
+        string template,
+        CancellationToken ct)
+    {
+        try
+        {
+            var body = template.Replace("{code}", code, StringComparison.Ordinal);
+            await _ultramsg.SendChatAsync(phone, body, ct);
+            if (_isDevelopment)
+                _logger.LogInformation("Profile WhatsApp OTP {Phone}: {Code}", MaskPhone(phone), code);
+            return "WhatsApp";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "WhatsApp OTP failed for {Phone}", MaskPhone(phone));
+            if (_isDevelopment)
+            {
+                _logger.LogWarning("DEV WhatsApp OTP {Phone}: {Code}", MaskPhone(phone), code);
+                return "Dev";
+            }
+            throw new InvalidOperationException("تعذّر إرسال رمز التحقق عبر واتساب. راجع إعدادات Ultramsg.");
+        }
+    }
+
     private async Task<string> DeliverAsync(
         UltramsgSettings settings,
         string? phone,
@@ -350,6 +438,18 @@ public class OtpService
             throw new InvalidOperationException("إعدادات SMTP غير مكتملة");
     }
 
+    private static void EnsureWhatsAppForProfile(UltramsgSettings settings)
+    {
+        if (!settings.Enabled)
+            throw new InvalidOperationException("خدمة التحقق غير مفعّلة حالياً. لا يمكن تعديل الملف الشخصي بدون واتساب.");
+
+        if (!settings.UsesWhatsApp())
+            throw new InvalidOperationException("تعديل ملف التاجر يتطلب تأكيداً عبر واتساب. فعّل قناة واتساب من إعدادات التحقق.");
+
+        if (string.IsNullOrWhiteSpace(settings.InstanceId) || string.IsNullOrWhiteSpace(settings.Token))
+            throw new InvalidOperationException("إعدادات Ultramsg غير مكتملة");
+    }
+
     private async Task EnforceSendCooldownAsync(OtpPurpose purpose, string destination, Guid? paymentId, CancellationToken ct)
     {
         var recent = await _db.OtpChallenges
@@ -422,6 +522,15 @@ public record PendingMerchantRegistration(
     string BusinessName,
     string? BusinessNameAr,
     string ContactPhone,
+    string? WebsiteUrl);
+
+public record PendingProfileChange(
+    Guid UserId,
+    string Email,
+    string FullName,
+    string Phone,
+    string BusinessName,
+    string? BusinessNameAr,
     string? WebsiteUrl);
 
 public record OtpSendResult(Guid ChallengeId, string MaskedDestination, int ExpiresInSeconds, string? DevCode, string Via);
