@@ -26,8 +26,9 @@ public class ApiKeyAuthenticationMiddleware
             return;
         }
 
-        var plain = keyValues.ToString();
-        var prefix = plain.Length >= 10 ? plain[..10] : plain;
+        var plain = keyValues.ToString().Trim();
+        // Must match ApiKeyService.Generate prefix length (12).
+        var prefix = plain.Length >= 12 ? plain[..12] : plain;
         var candidates = await db.ApiKeys
             .Include(k => k.Merchant)
             .Include(k => k.MerchantPlatform)

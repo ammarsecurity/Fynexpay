@@ -147,8 +147,16 @@ public static class DependencyInjection
         await EnsureColumnAsync(db, "Payments", "IsTest", "TINYINT(1) NOT NULL DEFAULT 0");
         await EnsureColumnAsync(db, "ApiKeys", "IsTest", "TINYINT(1) NOT NULL DEFAULT 0");
         await EnsureColumnAsync(db, "MerchantPlatforms", "OneTimeTestApiKey", "longtext NULL");
+        await EnsureColumnAsync(db, "Merchants", "KycIdFrontUrl", "varchar(500) NULL");
+        await EnsureColumnAsync(db, "Merchants", "KycIdBackUrl", "varchar(500) NULL");
+        await EnsureColumnAsync(db, "Merchants", "KycPassportUrl", "varchar(500) NULL");
+        await EnsureColumnAsync(db, "Merchants", "KycStatus", "int NOT NULL DEFAULT 0");
+        await EnsureColumnAsync(db, "Merchants", "KycAdminNotes", "varchar(1000) NULL");
+        await EnsureColumnAsync(db, "Merchants", "KycSubmittedAtUtc", "datetime(6) NULL");
+        await EnsureColumnAsync(db, "Merchants", "KycReviewedAtUtc", "datetime(6) NULL");
         await EnsureOtpChallengesTableAsync(db);
         await EnsureColumnAsync(db, "OtpChallenges", "TargetEmail", "varchar(256) NULL");
+        await EnsureColumnAsync(db, "Users", "FullNameAr", "varchar(200) NULL");
         await EnsureNotificationsTableAsync(db);
     }
 

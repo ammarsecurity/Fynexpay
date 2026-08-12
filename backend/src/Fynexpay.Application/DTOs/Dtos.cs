@@ -6,6 +6,7 @@ public record RegisterMerchantRequest(
     string Email,
     string Password,
     string FullName,
+    string FullNameAr,
     string BusinessName,
     string? BusinessNameAr,
     string? ContactPhone,
@@ -32,18 +33,41 @@ public record UserProfileDto(
     Guid UserId,
     string Email,
     string FullName,
+    string? FullNameAr,
     string? Phone,
     string Role,
     Guid? MerchantId,
     string? MerchantStatus,
     string? BusinessName,
     string? BusinessNameAr,
-    string? WebsiteUrl);
+    string? WebsiteUrl,
+    string? KycStatus = null,
+    string? KycIdFrontUrl = null,
+    string? KycIdBackUrl = null,
+    string? KycPassportUrl = null,
+    string? KycAdminNotes = null,
+    DateTime? KycSubmittedAtUtc = null,
+    DateTime? KycReviewedAtUtc = null,
+    bool KycCanUpload = true);
+
+public record MerchantKycDto(
+    string Status,
+    string? IdFrontUrl,
+    string? IdBackUrl,
+    string? PassportUrl,
+    string? AdminNotes,
+    DateTime? SubmittedAtUtc,
+    DateTime? ReviewedAtUtc,
+    bool CanUpload,
+    bool IsComplete);
+
+public record ReviewMerchantKycRequest(string Action, string? Notes);
 
 public record UpdateAdminProfileRequest(string FullName, string Email, string? Phone);
 
 public record UpdateMerchantProfileRequest(
     string FullName,
+    string FullNameAr,
     string Email,
     string? Phone,
     string BusinessName,
@@ -275,6 +299,7 @@ public record MerchantOwnerDto(
     Guid Id,
     string Email,
     string FullName,
+    string? FullNameAr,
     string? Phone,
     bool IsActive,
     DateTime CreatedAtUtc);
@@ -308,7 +333,14 @@ public record MerchantDetailDto(
     decimal LifetimeFees,
     int PaymentsCount,
     int ApiKeysCount,
-    IReadOnlyList<MerchantOwnerDto> Owners);
+    IReadOnlyList<MerchantOwnerDto> Owners,
+    string? KycStatus = null,
+    string? KycIdFrontUrl = null,
+    string? KycIdBackUrl = null,
+    string? KycPassportUrl = null,
+    string? KycAdminNotes = null,
+    DateTime? KycSubmittedAtUtc = null,
+    DateTime? KycReviewedAtUtc = null);
 
 public record UpdateMerchantAdminRequest(
     string? Status,
@@ -330,6 +362,7 @@ public record UpdateMerchantAdminRequest(
     bool? SuperQiEnabled,
     bool? AlqasehEnabled,
     string? OwnerFullName,
+    string? OwnerFullNameAr,
     string? OwnerEmail,
     string? OwnerPhone,
     string? NewPassword);

@@ -6,12 +6,30 @@
         <p class="sub">{{ $t('merchantOverview.sub') }}</p>
       </div>
       <div class="head-actions">
+        <div class="mode-switch" role="tablist" :aria-label="$t('payments.modeLabel')">
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="mode === 'live'"
+            :class="{ active: mode === 'live' }"
+            @click="setMode('live')"
+          >{{ $t('payments.modeLive') }}</button>
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="mode === 'test'"
+            :class="{ active: mode === 'test', test: true }"
+            @click="setMode('test')"
+          >{{ $t('payments.modeTest') }}</button>
+        </div>
         <span v-if="merchant" class="badge" :class="statusClass(merchant.status)">
           {{ $t(`status.${merchant.status}`, merchant.status) }}
         </span>
         <RouterLink class="btn" to="/merchant/test">{{ $t('merchantOverview.newPayment') }}</RouterLink>
       </div>
     </div>
+
+    <p class="mode-hint muted">{{ mode === 'test' ? $t('payments.modeTestHint') : $t('payments.modeLiveHint') }}</p>
 
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="merchant?.status === 'Pending'" class="banner warn">
@@ -34,7 +52,7 @@
       <div class="stat">
         <div class="ico green">↑</div>
         <div class="label">{{ $t('merchantOverview.lifetimeGross') }}</div>
-        <div class="value">{{ money(wallet.lifetimeGross) }}</div>
+        <div class="value">{{ money(overviewGross) }}</div>
         <div class="trend">{{ $t('merchantOverview.paidOps', { n: paidCount }) }}</div>
       </div>
       <div class="stat">
@@ -61,11 +79,11 @@
     <div class="grid secondary" v-if="wallet">
       <div class="mini-card">
         <span class="mini-label">{{ $t('merchantOverview.lifetimeFees') }}</span>
-        <strong class="mono">{{ money(wallet.lifetimeFees) }}</strong>
+        <strong class="mono">{{ money(overviewFees) }}</strong>
       </div>
       <div class="mini-card">
         <span class="mini-label">{{ $t('merchantOverview.netLifetime') }}</span>
-        <strong class="mono">{{ money(netLifetime) }}</strong>
+        <strong class="mono">{{ money(overviewNet) }}</strong>
       </div>
       <div class="mini-card">
         <span class="mini-label">{{ $t('merchantOverview.successRate') }}</span>
@@ -94,6 +112,9 @@
             <p class="muted chart-sub">{{ merchant?.businessNameAr || merchant?.contactEmail }}</p>
           </div>
           <div class="chart-totals">
+            <span class="badge" :class="mode === 'test' ? 'test' : 'live'">
+              {{ mode === 'test' ? $t('payments.modeTest') : $t('payments.modeLive') }}
+            </span>
             <span>{{ $t('merchantOverview.last14Vol') }}: <b class="mono">{{ money(seriesTotal) }}</b></span>
             <span>{{ $t('merchantOverview.last14Count', { n: seriesCount }) }}</span>
           </div>
@@ -138,6 +159,9 @@
             <div class="tx-main">
               <div class="tx-title-row">
                 <strong class="mono">{{ p.orderId || shortId(p.id) }}</strong>
+                <span class="badge" :class="p.isTest ? 'test' : 'live'">
+                  {{ p.isTest ? $t('payments.modeTest') : $t('payments.modeLive') }}
+                </span>
                 <span class="badge" :class="payStatusClass(p.status)">{{ $t(`status.${p.status}`, p.status) }}</span>
               </div>
               <div class="tx-meta">
@@ -230,21 +254,37 @@ const platforms = ref([])
 const methods = ref(null)
 const keys = ref([])
 const error = ref('')
+const mode = ref('live')
 
 const firstName = computed(() => (auth.user?.fullName || merchant.value?.businessName || 'تاجر').split(/\s+/)[0])
 const paidCount = computed(() => payments.value.filter((p) => p.status === 'Paid').length)
-const netLifetime = computed(() => Number(wallet.value?.lifetimeGross || 0) - Number(wallet.value?.lifetimeFees || 0))
+const overviewGross = computed(() => {
+  if (mode.value === 'test') {
+    return payments.value.filter((p) => p.status === 'Paid').reduce((s, p) => s + Number(p.amount || 0), 0)
+  }
+  return Number(wallet.value?.lifetimeGross || 0)
+})
+const overviewFees = computed(() => {
+  if (mode.value === 'test') {
+    return payments.value.filter((p) => p.status === 'Paid').reduce((s, p) => s + Number(p.platformFee || 0), 0)
+  }
+  return Number(wallet.value?.lifetimeFees || 0)
+})
+const overviewNet = computed(() => overviewGross.value - overviewFees.value)
 
 const commissionRows = computed(() => {
   const m = merchant.value
   if (!m) return []
+  // Only providers enabled by the main platform admin (same source as Payment Methods).
+  const allowed = new Set((methods.value?.platformEnabled || []).map((p) => String(p)))
+  if (!allowed.size) return []
   return [
     { key: 'fib', provider: 'Fib', rate: m.fibCommissionPercent ?? m.commissionPercent },
     { key: 'zain', provider: 'ZainCash', rate: m.zainCashCommissionPercent ?? m.commissionPercent },
     { key: 'qi', provider: 'Qi', rate: m.qiCommissionPercent ?? m.commissionPercent },
     { key: 'super', provider: 'SuperQi', rate: m.superQiCommissionPercent ?? m.commissionPercent },
     { key: 'alqaseh', provider: 'Alqaseh', rate: m.alqasehCommissionPercent ?? m.commissionPercent }
-  ]
+  ].filter((c) => allowed.has(c.provider))
 })
 const commissionRange = computed(() => {
   const rates = commissionRows.value.map((c) => Number(c.rate ?? 0))
@@ -287,7 +327,7 @@ const readiness = computed(() => {
   const plat = approvedPlatforms.value > 0
   const key = hasKey.value
   const meth = effectiveMethods.value.length > 0
-  const paid = paidCount.value > 0 || Number(wallet.value?.lifetimeGross || 0) > 0
+  const paid = paidCount.value > 0 || (mode.value === 'live' && Number(wallet.value?.lifetimeGross || 0) > 0)
   return [
     {
       key: 'account',
@@ -416,7 +456,7 @@ async function load() {
     const [m, w, pay, plat, meth, k] = await Promise.all([
       api.get('/api/merchant/me'),
       api.get('/api/merchant/wallet'),
-      api.get('/api/merchant/payments', { params: { page: 1, pageSize: 200 } }),
+      api.get('/api/merchant/payments', { params: { page: 1, pageSize: 200, mode: mode.value } }),
       api.get('/api/merchant/platforms'),
       api.get('/api/merchant/payment-methods'),
       api.get('/api/merchant/api-keys')
@@ -433,11 +473,54 @@ async function load() {
   }
 }
 
+async function setMode(next) {
+  if (mode.value === next) return
+  mode.value = next
+  error.value = ''
+  try {
+    const { data } = await api.get('/api/merchant/payments', {
+      params: { page: 1, pageSize: 200, mode: mode.value }
+    })
+    payments.value = data?.items || []
+    paymentsTotal.value = data?.total ?? payments.value.length
+  } catch (e) {
+    error.value = e.response?.data?.message || t('merchantOverview.loadFail')
+  }
+}
+
 onMounted(load)
 </script>
 
 <style scoped>
 .head-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.mode-switch {
+  display: inline-flex;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #f8fafc;
+  gap: 4px;
+}
+.mode-switch button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 8px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.mode-switch button.active {
+  background: #031838;
+  color: #fff;
+}
+.mode-switch button.active.test {
+  background: #b45309;
+  color: #fff;
+}
+.mode-hint { margin: 0 0 14px; font-size: 0.88rem; }
 .banner.warn {
   background: #fffbeb;
   border: 1px solid #fcd34d;
@@ -484,7 +567,9 @@ onMounted(load)
   text-align: end;
   font-size: 0.8rem;
   color: var(--muted);
+  justify-items: end;
 }
+.chart-totals .badge { justify-self: end; }
 .ready-pct {
   font-size: 1.4rem;
   color: var(--brand-secondary);

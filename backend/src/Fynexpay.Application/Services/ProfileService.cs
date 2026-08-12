@@ -70,7 +70,8 @@ public class ProfileService
         if (user.Role is not (UserRole.MerchantOwner or UserRole.MerchantStaff) || user.Merchant is null)
             throw new UnauthorizedAccessException("غير مصرح");
 
-        PasswordRules.ValidateRequired(request.FullName, "الاسم الكامل");
+        PasswordRules.ValidateRequired(request.FullName, "الاسم الكامل بالإنجليزية");
+        PasswordRules.ValidateRequired(request.FullNameAr, "الاسم الكامل بالعربية");
         PasswordRules.ValidateEmail(request.Email);
         PasswordRules.ValidateRequired(request.BusinessName, "اسم النشاط");
 
@@ -87,6 +88,7 @@ public class ProfileService
             userId,
             email,
             request.FullName.Trim(),
+            request.FullNameAr.Trim(),
             phoneRaw!,
             request.BusinessName.Trim(),
             string.IsNullOrWhiteSpace(request.BusinessNameAr) ? null : request.BusinessNameAr.Trim(),
@@ -117,6 +119,7 @@ public class ProfileService
             throw new InvalidOperationException("البريد الإلكتروني مستخدم مسبقاً");
 
         user.FullName = pending.FullName;
+        user.FullNameAr = pending.FullNameAr;
         user.Email = pending.Email;
         user.Phone = pending.Phone;
 
@@ -145,15 +148,29 @@ public class ProfileService
             user.Merchant?.Status.ToString());
     }
 
-    private static UserProfileDto Map(Domain.Entities.User user) => new(
-        user.Id,
-        user.Email,
-        user.FullName,
-        user.Phone ?? user.Merchant?.ContactPhone,
-        user.Role.ToString(),
-        user.MerchantId,
-        user.Merchant?.Status.ToString(),
-        user.Merchant?.BusinessName,
-        user.Merchant?.BusinessNameAr,
-        user.Merchant?.WebsiteUrl);
+    private static UserProfileDto Map(Domain.Entities.User user)
+    {
+        var m = user.Merchant;
+        var kyc = m == null ? null : MerchantKycService.Map(m);
+        return new(
+            user.Id,
+            user.Email,
+            user.FullName,
+            user.FullNameAr,
+            user.Phone ?? m?.ContactPhone,
+            user.Role.ToString(),
+            user.MerchantId,
+            m?.Status.ToString(),
+            m?.BusinessName,
+            m?.BusinessNameAr,
+            m?.WebsiteUrl,
+            kyc?.Status,
+            kyc?.IdFrontUrl,
+            kyc?.IdBackUrl,
+            kyc?.PassportUrl,
+            kyc?.AdminNotes,
+            kyc?.SubmittedAtUtc,
+            kyc?.ReviewedAtUtc,
+            kyc?.CanUpload ?? true);
+    }
 }

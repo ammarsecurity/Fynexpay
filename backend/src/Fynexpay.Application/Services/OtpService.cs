@@ -90,7 +90,8 @@ public class OtpService
 
         PasswordRules.ValidateEmail(request.Email);
         PasswordRules.Validate(request.Password);
-        PasswordRules.ValidateRequired(request.FullName, "الاسم الكامل");
+        PasswordRules.ValidateRequired(request.FullName, "الاسم الكامل بالإنجليزية");
+        PasswordRules.ValidateRequired(request.FullNameAr, "الاسم الكامل بالعربية");
         PasswordRules.ValidateRequired(request.BusinessName, "اسم النشاط");
 
         var useWa = settings.UsesWhatsApp();
@@ -113,6 +114,7 @@ public class OtpService
             email,
             _protector.Protect(request.Password),
             request.FullName.Trim(),
+            request.FullNameAr.Trim(),
             request.BusinessName.Trim(),
             string.IsNullOrWhiteSpace(request.BusinessNameAr) ? null : request.BusinessNameAr.Trim(),
             phone ?? request.ContactPhone?.Trim() ?? "",
@@ -255,6 +257,7 @@ public class OtpService
         Guid userId,
         string email,
         string fullName,
+        string fullNameAr,
         string phoneRaw,
         string businessName,
         string? businessNameAr,
@@ -271,6 +274,7 @@ public class OtpService
             userId,
             email,
             fullName,
+            fullNameAr,
             phone,
             businessName,
             businessNameAr,
@@ -519,6 +523,7 @@ public record PendingMerchantRegistration(
     string Email,
     string Password,
     string FullName,
+    string FullNameAr,
     string BusinessName,
     string? BusinessNameAr,
     string ContactPhone,
@@ -528,6 +533,7 @@ public record PendingProfileChange(
     Guid UserId,
     string Email,
     string FullName,
+    string FullNameAr,
     string Phone,
     string BusinessName,
     string? BusinessNameAr,

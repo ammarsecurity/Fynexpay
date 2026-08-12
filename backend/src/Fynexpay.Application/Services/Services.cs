@@ -65,6 +65,7 @@ public class AuthService
             request.Email,
             request.Password,
             request.FullName,
+            request.FullNameAr,
             request.BusinessName,
             request.BusinessNameAr,
             request.ContactPhone,
@@ -80,6 +81,7 @@ public class AuthService
             pending.Email,
             pending.Password,
             pending.FullName,
+            pending.FullNameAr,
             pending.BusinessName,
             pending.BusinessNameAr,
             pending.ContactPhone,
@@ -93,6 +95,7 @@ public class AuthService
         string emailRaw,
         string password,
         string fullName,
+        string fullNameAr,
         string businessName,
         string? businessNameAr,
         string? contactPhone,
@@ -101,7 +104,8 @@ public class AuthService
     {
         PasswordRules.ValidateEmail(emailRaw);
         PasswordRules.Validate(password);
-        PasswordRules.ValidateRequired(fullName, "الاسم الكامل");
+        PasswordRules.ValidateRequired(fullName, "الاسم الكامل بالإنجليزية");
+        PasswordRules.ValidateRequired(fullNameAr, "الاسم الكامل بالعربية");
         PasswordRules.ValidateRequired(businessName, "اسم النشاط");
 
         var email = emailRaw.Trim().ToLowerInvariant();
@@ -130,6 +134,7 @@ public class AuthService
         {
             Email = email,
             FullName = fullName.Trim(),
+            FullNameAr = fullNameAr.Trim(),
             Phone = contactPhone?.Trim(),
             PasswordHash = _passwordHasher.Hash(password),
             Role = UserRole.MerchantOwner,
@@ -1207,7 +1212,7 @@ public class MerchantAdminService
         var apiKeysCount = await _db.ApiKeys.CountAsync(k => k.MerchantId == merchantId, ct);
         var owners = m.Users
             .OrderBy(u => u.CreatedAtUtc)
-            .Select(u => new MerchantOwnerDto(u.Id, u.Email, u.FullName, u.Phone, u.IsActive, u.CreatedAtUtc))
+            .Select(u => new MerchantOwnerDto(u.Id, u.Email, u.FullName, u.FullNameAr, u.Phone, u.IsActive, u.CreatedAtUtc))
             .ToList();
 
         var maskedSecret = string.IsNullOrEmpty(m.WebhookSecret) || m.WebhookSecret.Length < 8
@@ -1230,7 +1235,14 @@ public class MerchantAdminService
             m.Wallet?.PendingBalance ?? 0,
             m.Wallet?.LifetimeGross ?? 0,
             m.Wallet?.LifetimeFees ?? 0,
-            paymentsCount, apiKeysCount, owners);
+            paymentsCount, apiKeysCount, owners,
+            m.KycStatus.ToString(),
+            m.KycIdFrontUrl,
+            m.KycIdBackUrl,
+            m.KycPassportUrl,
+            m.KycAdminNotes,
+            m.KycSubmittedAtUtc,
+            m.KycReviewedAtUtc);
     }
 
     public async Task<MerchantDto> UpdateAsync(Guid merchantId, UpdateMerchantAdminRequest request, CancellationToken ct = default)
@@ -1308,8 +1320,14 @@ public class MerchantAdminService
             if (request.OwnerFullName != null)
             {
                 if (string.IsNullOrWhiteSpace(request.OwnerFullName))
-                    throw new ArgumentException("اسم المسؤول مطلوب");
+                    throw new ArgumentException("اسم المسؤول بالإنجليزية مطلوب");
                 owner.FullName = request.OwnerFullName.Trim();
+            }
+            if (request.OwnerFullNameAr != null)
+            {
+                if (string.IsNullOrWhiteSpace(request.OwnerFullNameAr))
+                    throw new ArgumentException("اسم المسؤول بالعربية مطلوب");
+                owner.FullNameAr = request.OwnerFullNameAr.Trim();
             }
             if (request.OwnerPhone != null)
                 owner.Phone = string.IsNullOrWhiteSpace(request.OwnerPhone) ? null : request.OwnerPhone.Trim();

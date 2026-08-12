@@ -509,7 +509,12 @@ public class MerchantPlatformService
         if (string.IsNullOrWhiteSpace(originOrReferer) || string.IsNullOrWhiteSpace(platformDomain))
             return false;
 
-        if (!Uri.TryCreate(originOrReferer.Trim(), UriKind.Absolute, out var uri))
+        var raw = originOrReferer.Trim();
+        // Postman/tools sometimes send bare host without scheme.
+        if (!raw.Contains("://", StringComparison.Ordinal))
+            raw = "https://" + raw.TrimStart('/');
+
+        if (!Uri.TryCreate(raw, UriKind.Absolute, out var uri))
             return false;
 
         try

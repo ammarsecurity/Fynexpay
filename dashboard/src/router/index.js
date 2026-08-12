@@ -44,6 +44,7 @@ const pendingMerchantAllowed = new Set([
   'merchant-docs',
   'merchant-methods',
   'merchant-payments',
+  'merchant-test',
   'merchant-profile',
   'home'
 ])

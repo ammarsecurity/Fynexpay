@@ -22,6 +22,13 @@
               <div><dt>{{ $t('common.status') }}</dt>
                 <dd><span class="badge" :class="statusClass(payment.status)">{{ $t(`status.${payment.status}`, payment.status) }}</span></dd>
               </div>
+              <div><dt>{{ $t('payments.mode') }}</dt>
+                <dd>
+                  <span class="badge" :class="payment.isTest ? 'test' : 'live'">
+                    {{ payment.isTest ? $t('payments.modeTest') : $t('payments.modeLive') }}
+                  </span>
+                </dd>
+              </div>
               <div><dt>{{ $t('common.provider') }}</dt><dd><ProviderBadge :provider="payment.provider" /></dd></div>
               <div v-if="payment.merchantName"><dt>{{ $t('payments.merchant') }}</dt><dd>{{ payment.merchantName }}</dd></div>
               <div v-if="payment.merchantId"><dt>{{ $t('payments.merchantId') }}</dt><dd class="mono">{{ payment.merchantId }}</dd></div>

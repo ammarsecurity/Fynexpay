@@ -31,6 +31,17 @@ public class Merchant : BaseEntity
     public bool SuperQiEnabled { get; set; } = true;
     public bool AlqasehEnabled { get; set; } = true;
 
+    /// <summary>هوية وطنية — الوجه الأمامي.</summary>
+    public string? KycIdFrontUrl { get; set; }
+    /// <summary>هوية وطنية — الوجه الخلفي.</summary>
+    public string? KycIdBackUrl { get; set; }
+    /// <summary>جواز السفر الإلكتروني.</summary>
+    public string? KycPassportUrl { get; set; }
+    public KycStatus KycStatus { get; set; } = KycStatus.None;
+    public string? KycAdminNotes { get; set; }
+    public DateTime? KycSubmittedAtUtc { get; set; }
+    public DateTime? KycReviewedAtUtc { get; set; }
+
     public Wallet? Wallet { get; set; }
     public ICollection<User> Users { get; set; } = new List<User>();
     public ICollection<ApiKey> ApiKeys { get; set; } = new List<ApiKey>();

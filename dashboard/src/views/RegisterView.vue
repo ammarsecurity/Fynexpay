@@ -61,10 +61,13 @@
         <template v-if="step === 'form'">
           <form @submit.prevent="submitForm">
             <div class="auth-fields-2">
-              <div class="field"><label>{{ $t('auth.fullName') }}</label><input v-model="form.fullName" required /></div>
-              <div class="field"><label>{{ $t('auth.businessName') }}</label><input v-model="form.businessName" placeholder="Shop Name" required /></div>
+              <div class="field"><label>{{ $t('auth.fullNameAr') }}</label><input v-model="form.fullNameAr" required dir="rtl" /></div>
+              <div class="field"><label>{{ $t('auth.fullNameEn') }}</label><input v-model="form.fullName" required dir="ltr" /></div>
             </div>
-            <div class="field"><label>{{ $t('auth.businessNameAr') }}</label><input v-model="form.businessNameAr" /></div>
+            <div class="auth-fields-2">
+              <div class="field"><label>{{ $t('auth.businessName') }}</label><input v-model="form.businessName" placeholder="Shop Name" required /></div>
+              <div class="field"><label>{{ $t('auth.businessNameAr') }}</label><input v-model="form.businessNameAr" /></div>
+            </div>
             <div class="auth-fields-2">
               <div class="field"><label>{{ $t('auth.email') }}</label><input v-model="form.email" type="email" placeholder="merchant@shop.iq" required /></div>
               <div class="field" v-if="needPhone"><label>{{ $t('auth.phone') }}</label><input v-model="form.contactPhone" placeholder="07xxxxxxxxx" class="ltr" /></div>
@@ -154,6 +157,7 @@ const bannerIcon = computed(() => {
 
 const form = reactive({
   fullName: '',
+  fullNameAr: '',
   businessName: '',
   businessNameAr: '',
   email: '',

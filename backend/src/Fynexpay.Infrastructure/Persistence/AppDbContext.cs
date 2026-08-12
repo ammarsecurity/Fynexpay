@@ -32,6 +32,7 @@ public class AppDbContext : DbContext, IAppDbContext
             e.HasIndex(x => x.Email).IsUnique();
             e.Property(x => x.Email).HasMaxLength(256);
             e.Property(x => x.FullName).HasMaxLength(200);
+            e.Property(x => x.FullNameAr).HasMaxLength(200);
             e.HasOne(x => x.Merchant).WithMany(m => m.Users).HasForeignKey(x => x.MerchantId).OnDelete(DeleteBehavior.SetNull);
         });
 
@@ -45,6 +46,10 @@ public class AppDbContext : DbContext, IAppDbContext
             e.Property(x => x.SuperQiCommissionPercent).HasPrecision(5, 2);
             e.Property(x => x.AlqasehCommissionPercent).HasPrecision(5, 2);
             e.Property(x => x.WebhookSecret).HasMaxLength(128);
+            e.Property(x => x.KycIdFrontUrl).HasMaxLength(500);
+            e.Property(x => x.KycIdBackUrl).HasMaxLength(500);
+            e.Property(x => x.KycPassportUrl).HasMaxLength(500);
+            e.Property(x => x.KycAdminNotes).HasMaxLength(1000);
             e.HasOne(x => x.Wallet).WithOne(w => w.Merchant).HasForeignKey<Wallet>(w => w.MerchantId);
         });
 

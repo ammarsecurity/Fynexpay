@@ -8,6 +8,7 @@ using Fynexpay.Application.Abstractions.Payments;
 using Fynexpay.Application.DTOs;
 using Fynexpay.Application.Security;
 using Fynexpay.Application.Services;
+using Fynexpay.Domain.Entities;
 using Fynexpay.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -81,6 +82,7 @@ public class MerchantDashboardController : ControllerBase
     private readonly PaymentService _payments;
     private readonly NotificationService _notifications;
     private readonly ProfileService _profiles;
+    private readonly MerchantKycService _kyc;
     private readonly IAppDbContext _db;
 
     public MerchantDashboardController(
@@ -91,6 +93,7 @@ public class MerchantDashboardController : ControllerBase
         PaymentService payments,
         NotificationService notifications,
         ProfileService profiles,
+        MerchantKycService kyc,
         IAppDbContext db)
     {
         _merchants = merchants;
@@ -100,6 +103,7 @@ public class MerchantDashboardController : ControllerBase
         _payments = payments;
         _notifications = notifications;
         _profiles = profiles;
+        _kyc = kyc;
         _db = db;
     }
 
@@ -138,6 +142,29 @@ public class MerchantDashboardController : ControllerBase
         catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
     }
 
+    [HttpGet("kyc")]
+    public async Task<ActionResult<MerchantKycDto>> GetKyc(CancellationToken ct)
+        => Ok(await _kyc.GetForMerchantAsync(MerchantId, ct));
+
+    [HttpPost("kyc/{docType}")]
+    [RequestSizeLimit(5_500_000)]
+    public async Task<ActionResult<MerchantKycDto>> UploadKyc(string docType, IFormFile file, CancellationToken ct)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { message = "لم يتم رفع ملف" });
+
+        await using var ms = new MemoryStream();
+        await file.CopyToAsync(ms, ct);
+        try
+        {
+            return Ok(await _kyc.UploadAsync(MerchantId, docType, ms.ToArray(), Directory.GetCurrentDirectory(), ct));
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
     [HttpGet("wallet")]
     public async Task<ActionResult<WalletDto>> Wallet(CancellationToken ct) => Ok(await _wallets.GetAsync(MerchantId, ct));
 
@@ -146,6 +173,7 @@ public class MerchantDashboardController : ControllerBase
         [FromQuery] string? status,
         [FromQuery] string? provider,
         [FromQuery] string? q,
+        [FromQuery] string? mode,
         [FromQuery] DateTime? from,
         [FromQuery] DateTime? to,
         [FromQuery] int page = 1,
@@ -160,6 +188,7 @@ public class MerchantDashboardController : ControllerBase
             query = query.Where(p => p.Status == st);
         if (!string.IsNullOrWhiteSpace(provider) && Enum.TryParse<PaymentProviderType>(provider, true, out var pv) && pv != PaymentProviderType.Auto)
             query = query.Where(p => p.Provider == pv);
+        query = ApplyPaymentModeFilter(query, mode);
         if (from.HasValue) query = query.Where(p => p.CreatedAtUtc >= from.Value.ToUniversalTime());
         if (to.HasValue) query = query.Where(p => p.CreatedAtUtc <= to.Value.ToUniversalTime());
         if (!string.IsNullOrWhiteSpace(q))
@@ -450,6 +479,21 @@ public class MerchantDashboardController : ControllerBase
     }
 
     public record CreateApiKeyBody(string? Name);
+
+    private static IQueryable<Payment> ApplyPaymentModeFilter(
+        IQueryable<Payment> query,
+        string? mode)
+    {
+        if (string.IsNullOrWhiteSpace(mode)) return query;
+        var m = mode.Trim();
+        if (m.Equals("test", StringComparison.OrdinalIgnoreCase))
+            return query.Where(p => p.IsTest);
+        if (m.Equals("live", StringComparison.OrdinalIgnoreCase)
+            || m.Equals("production", StringComparison.OrdinalIgnoreCase)
+            || m.Equals("prod", StringComparison.OrdinalIgnoreCase))
+            return query.Where(p => !p.IsTest);
+        return query;
+    }
 }
 
 [ApiController]
@@ -471,6 +515,7 @@ public class AdminController : ControllerBase
     private readonly NotificationService _notifications;
     private readonly INotificationSettingsService _notificationSettings;
     private readonly ProfileService _profiles;
+    private readonly MerchantKycService _kyc;
 
     public AdminController(
         MerchantAdminService merchants,
@@ -485,7 +530,8 @@ public class AdminController : ControllerBase
         IEmailSender emailSender,
         NotificationService notifications,
         INotificationSettingsService notificationSettings,
-        ProfileService profiles)
+        ProfileService profiles,
+        MerchantKycService kyc)
     {
         _merchants = merchants;
         _platforms = platforms;
@@ -500,6 +546,7 @@ public class AdminController : ControllerBase
         _notifications = notifications;
         _notificationSettings = notificationSettings;
         _profiles = profiles;
+        _kyc = kyc;
     }
 
     private Guid AdminUserId => Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -604,6 +651,14 @@ public class AdminController : ControllerBase
         { return BadRequest(new { message = ex.Message }); }
     }
 
+    [HttpPost("merchants/{id:guid}/kyc/review")]
+    public async Task<ActionResult<MerchantKycDto>> ReviewMerchantKyc(Guid id, [FromBody] ReviewMerchantKycRequest request, CancellationToken ct)
+    {
+        try { return Ok(await _kyc.ReviewAsync(id, request, ct)); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        { return BadRequest(new { message = ex.Message }); }
+    }
+
     [HttpDelete("merchants/{id:guid}")]
     public async Task<IActionResult> DeleteMerchant(Guid id, CancellationToken ct)
     {
@@ -620,6 +675,7 @@ public class AdminController : ControllerBase
         [FromQuery] string? status,
         [FromQuery] string? provider,
         [FromQuery] string? q,
+        [FromQuery] string? mode,
         [FromQuery] DateTime? from,
         [FromQuery] DateTime? to,
         [FromQuery] int page = 1,
@@ -634,6 +690,7 @@ public class AdminController : ControllerBase
             query = query.Where(p => p.Status == st);
         if (!string.IsNullOrWhiteSpace(provider) && Enum.TryParse<PaymentProviderType>(provider, true, out var pv) && pv != PaymentProviderType.Auto)
             query = query.Where(p => p.Provider == pv);
+        query = ApplyPaymentModeFilter(query, mode);
         if (from.HasValue) query = query.Where(p => p.CreatedAtUtc >= from.Value.ToUniversalTime());
         if (to.HasValue) query = query.Where(p => p.CreatedAtUtc <= to.Value.ToUniversalTime());
         if (!string.IsNullOrWhiteSpace(q))
@@ -930,6 +987,21 @@ public class AdminController : ControllerBase
             "alqaseh" or "al-qaseh" or "qaseh" => settings.Alqaseh,
             _ => null
         };
+
+    private static IQueryable<Payment> ApplyPaymentModeFilter(
+        IQueryable<Payment> query,
+        string? mode)
+    {
+        if (string.IsNullOrWhiteSpace(mode)) return query;
+        var m = mode.Trim();
+        if (m.Equals("test", StringComparison.OrdinalIgnoreCase))
+            return query.Where(p => p.IsTest);
+        if (m.Equals("live", StringComparison.OrdinalIgnoreCase)
+            || m.Equals("production", StringComparison.OrdinalIgnoreCase)
+            || m.Equals("prod", StringComparison.OrdinalIgnoreCase))
+            return query.Where(p => !p.IsTest);
+        return query;
+    }
 }
 
 [ApiController]

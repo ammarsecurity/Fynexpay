@@ -53,8 +53,42 @@
           </div>
 
           <div class="sections">
-            <section class="panel">
-              <h3>{{ $t('merchants.sectionBusiness') }}</h3>
+          <section class="panel">
+            <div class="panel-head">
+              <h3>{{ $t('merchants.kycTitle') }}</h3>
+              <span class="badge" :class="kycBadgeClass">{{ kycStatusLabel }}</span>
+            </div>
+            <p v-if="detail.kycAdminNotes" class="muted kyc-notes">{{ detail.kycAdminNotes }}</p>
+            <div class="kyc-grid">
+              <a
+                v-for="doc in kycDocs"
+                :key="doc.key"
+                class="kyc-doc"
+                :href="doc.url || undefined"
+                :target="doc.url ? '_blank' : undefined"
+                rel="noopener"
+              >
+                <span>{{ doc.label }}</span>
+                <img v-if="doc.url" :src="mediaUrl(doc.url)" :alt="doc.label" />
+                <em v-else>{{ $t('merchants.kycMissing') }}</em>
+              </a>
+            </div>
+            <div v-if="canReviewKyc" class="kyc-actions">
+              <textarea v-model="kycNotes" rows="2" :placeholder="$t('merchants.kycNotesPh')"></textarea>
+              <div class="row-actions">
+                <button class="btn sm" type="button" :disabled="kycBusy" @click="reviewKyc('Approve')">
+                  {{ kycBusy ? $t('common.loading') : $t('merchants.kycApprove') }}
+                </button>
+                <button class="btn secondary sm" type="button" :disabled="kycBusy" @click="reviewKyc('Reject')">
+                  {{ $t('merchants.kycReject') }}
+                </button>
+              </div>
+              <p v-if="kycError" class="error tiny">{{ kycError }}</p>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h3>{{ $t('merchants.sectionBusiness') }}</h3>
               <dl class="kv">
                 <div><dt>{{ $t('merchants.business') }}</dt><dd>{{ detail.businessName }}</dd></div>
                 <div><dt>{{ $t('merchants.businessAr') }}</dt><dd>{{ detail.businessNameAr || '—' }}</dd></div>
@@ -117,7 +151,8 @@
               <article v-for="o in detail.owners" :key="o.id" class="owner">
                 <div class="owner-avatar">{{ (o.fullName || '?').slice(0, 1) }}</div>
                 <div class="owner-meta">
-                  <strong>{{ o.fullName }}</strong>
+                  <strong>{{ o.fullNameAr || o.fullName }}</strong>
+                  <span v-if="o.fullNameAr && o.fullName" class="muted">{{ o.fullName }}</span>
                   <span class="mono">{{ o.email }}</span>
                   <span class="muted">{{ o.phone || '—' }}</span>
                 </div>
@@ -215,8 +250,12 @@
             <h3>{{ $t('merchants.sectionOwnerEdit') }}</h3>
             <div class="form-grid">
               <label class="field">
+                <span>{{ $t('merchants.ownerNameAr') }}</span>
+                <input v-model="form.ownerFullNameAr" dir="rtl" />
+              </label>
+              <label class="field">
                 <span>{{ $t('merchants.ownerName') }}</span>
-                <input v-model="form.ownerFullName" />
+                <input v-model="form.ownerFullName" dir="ltr" />
               </label>
               <label class="field">
                 <span>{{ $t('merchants.ownerEmail') }}</span>
@@ -256,7 +295,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { api } from '../api'
+import { api, API_BASE } from '../api'
 import ProviderBadge from './ProviderBadge.vue'
 import { useDialog } from '../composables/useDialog'
 
@@ -277,6 +316,60 @@ const saving = ref(false)
 const deleting = ref(false)
 const saveError = ref('')
 const saveOk = ref(false)
+const kycNotes = ref('')
+const kycBusy = ref(false)
+const kycError = ref('')
+
+const kycDocs = computed(() => {
+  const d = detail.value
+  if (!d) return []
+  return [
+    { key: 'front', label: t('merchants.kycIdFront'), url: d.kycIdFrontUrl },
+    { key: 'back', label: t('merchants.kycIdBack'), url: d.kycIdBackUrl },
+    { key: 'passport', label: t('merchants.kycPassport'), url: d.kycPassportUrl }
+  ]
+})
+const kycStatusLabel = computed(() => t(`profile.kycStatus.${detail.value?.kycStatus || 'None'}`, detail.value?.kycStatus || 'None'))
+const kycBadgeClass = computed(() => {
+  const s = detail.value?.kycStatus
+  if (s === 'Approved') return 'ok'
+  if (s === 'Pending') return 'warn'
+  if (s === 'Rejected') return 'danger'
+  return ''
+})
+const canReviewKyc = computed(() => {
+  const d = detail.value
+  return d && d.kycStatus === 'Pending' && d.kycIdFrontUrl && d.kycIdBackUrl && d.kycPassportUrl
+})
+
+function mediaUrl(path) {
+  if (!path) return ''
+  if (/^https?:\/\//i.test(path)) return path
+  return `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`
+}
+
+async function reviewKyc(action) {
+  if (!props.merchantId) return
+  kycBusy.value = true
+  kycError.value = ''
+  try {
+    const { data } = await api.post(`/api/admin/merchants/${props.merchantId}/kyc/review`, {
+      action,
+      notes: kycNotes.value || null
+    })
+    if (detail.value) {
+      detail.value.kycStatus = data.status
+      detail.value.kycAdminNotes = data.adminNotes
+      detail.value.kycReviewedAtUtc = data.reviewedAtUtc
+    }
+    kycNotes.value = ''
+    emit('changed')
+  } catch (e) {
+    kycError.value = e.response?.data?.message || t('merchants.kycReviewFail')
+  } finally {
+    kycBusy.value = false
+  }
+}
 
 const form = reactive({
   businessName: '',
@@ -298,6 +391,7 @@ const form = reactive({
   superQiEnabled: true,
   alqasehEnabled: true,
   ownerFullName: '',
+  ownerFullNameAr: '',
   ownerEmail: '',
   ownerPhone: '',
   newPassword: ''
@@ -397,6 +491,7 @@ function fillForm(d) {
   form.superQiEnabled = !!d.superQiEnabled
   form.alqasehEnabled = !!d.alqasehEnabled
   form.ownerFullName = owner?.fullName || ''
+  form.ownerFullNameAr = owner?.fullNameAr || ''
   form.ownerEmail = owner?.email || ''
   form.ownerPhone = owner?.phone || ''
   form.newPassword = ''
@@ -456,6 +551,7 @@ async function save() {
       superQiEnabled: form.superQiEnabled,
       alqasehEnabled: form.alqasehEnabled,
       ownerFullName: form.ownerFullName || null,
+      ownerFullNameAr: form.ownerFullNameAr || null,
       ownerEmail: form.ownerEmail || null,
       ownerPhone: form.ownerPhone || null,
       newPassword: form.newPassword || null
@@ -881,10 +977,44 @@ dd {
 }
 .msg { margin: 0 0 8px; font-weight: 700; }
 .ok-msg { color: #15803d; }
+.kyc-notes { margin: 0 0 12px; }
+.kyc-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.kyc-doc {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f8fafc;
+  text-decoration: none;
+  color: inherit;
+}
+.kyc-doc span { font-size: 0.8rem; font-weight: 700; color: var(--muted); }
+.kyc-doc img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 10px;
+}
+.kyc-doc em { color: var(--muted); font-style: normal; font-size: 0.85rem; }
+.kyc-actions { display: grid; gap: 10px; }
+.kyc-actions textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font: inherit;
+  resize: vertical;
+}
 
 @media (max-width: 900px) {
   .metrics { grid-template-columns: 1fr 1fr; }
-  .sections, .form-grid, .provider-grid { grid-template-columns: 1fr; }
+  .sections, .form-grid, .provider-grid, .kyc-grid { grid-template-columns: 1fr; }
   .modal-head { flex-direction: column; align-items: stretch; }
   .head-actions { justify-content: space-between; }
   .kv > div { grid-template-columns: 1fr; gap: 2px; }

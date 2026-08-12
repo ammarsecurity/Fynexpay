@@ -1,7 +1,29 @@
 <template>
   <div>
-    <h1>{{ $t('payments.title') }}</h1>
-    <p class="muted">{{ $t('payments.subtitle') }}</p>
+    <div class="page-head">
+      <div>
+        <h1>{{ $t('payments.title') }}</h1>
+        <p class="muted">{{ $t('payments.subtitle') }}</p>
+      </div>
+      <div class="mode-switch" role="tablist" :aria-label="$t('payments.modeLabel')">
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="mode === 'live'"
+          :class="{ active: mode === 'live' }"
+          @click="setMode('live')"
+        >{{ $t('payments.modeLive') }}</button>
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="mode === 'test'"
+          :class="{ active: mode === 'test', test: true }"
+          @click="setMode('test')"
+        >{{ $t('payments.modeTest') }}</button>
+      </div>
+    </div>
+
+    <p class="mode-hint muted">{{ mode === 'test' ? $t('payments.modeTestHint') : $t('payments.modeLiveHint') }}</p>
 
     <DataToolbar
       v-model="filters"
@@ -19,6 +41,7 @@
             <tr>
               <th>{{ $t('common.date') }}</th>
               <th>{{ $t('common.status') }}</th>
+              <th>{{ $t('payments.mode') }}</th>
               <th>{{ $t('common.provider') }}</th>
               <th>{{ $t('common.amount') }}</th>
               <th>{{ $t('payments.net') }}</th>
@@ -34,6 +57,11 @@
               </td>
               <td>
                 <span class="badge" :class="statusClass(p.status)">{{ $t(`status.${p.status}`, p.status) }}</span>
+              </td>
+              <td>
+                <span class="badge" :class="p.isTest ? 'test' : 'live'">
+                  {{ p.isTest ? $t('payments.modeTest') : $t('payments.modeLive') }}
+                </span>
               </td>
               <td><ProviderBadge :provider="p.provider" /></td>
               <td class="money">{{ format(p.amount) }}</td>
@@ -86,6 +114,7 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
 const selectedId = ref('')
+const mode = ref('live')
 const filters = reactive({ q: '', status: '', provider: '', from: '', to: '' })
 const applied = reactive({ q: '', status: '', provider: '', from: '', to: '' })
 
@@ -110,11 +139,19 @@ function statusClass(s) {
 }
 function openDetails(id) { selectedId.value = id }
 
+function setMode(next) {
+  if (mode.value === next) return
+  mode.value = next
+  page.value = 1
+  load()
+}
+
 async function load() {
   const { data } = await api.get('/api/merchant/payments', {
     params: {
       page: page.value,
       pageSize: pageSize.value,
+      mode: mode.value,
       q: applied.q || undefined,
       status: applied.status || undefined,
       provider: applied.provider || undefined,
@@ -145,6 +182,45 @@ onMounted(load)
 </script>
 
 <style scoped>
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.page-head h1 { margin: 0 0 4px; }
+.mode-switch {
+  display: inline-flex;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #f8fafc;
+  gap: 4px;
+}
+.mode-switch button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.86rem;
+  padding: 9px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.mode-switch button.active {
+  background: #031838;
+  color: #fff;
+}
+.mode-switch button.active.test {
+  background: #b45309;
+  color: #fff;
+}
+.mode-hint { margin: 0 0 14px; font-size: 0.88rem; }
+.badge.test { background: #fff7ed; color: #c2410c; border: 1px solid #fdba74; }
+.badge.live { background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7; }
 .table-card { padding: 0; overflow: hidden; }
 .table-wrap { overflow-x: auto; }
 .payments-table { width: 100%; border-collapse: collapse; }

@@ -7,6 +7,8 @@ public class User : BaseEntity
     public string Email { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
     public string FullName { get; set; } = string.Empty;
+    /// <summary>Full legal name in Arabic (required for merchants).</summary>
+    public string? FullNameAr { get; set; }
     public string? Phone { get; set; }
     public UserRole Role { get; set; }
     public bool IsActive { get; set; } = true;

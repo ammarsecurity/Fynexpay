@@ -18,17 +18,23 @@
         <form v-if="step === 'form'" @submit.prevent="submitForm">
           <div class="grid-2">
             <div class="field">
-              <label>{{ t('fullName') }}</label>
-              <input v-model="form.fullName" required />
+              <label>{{ t('fullNameAr') }}</label>
+              <input v-model="form.fullNameAr" required dir="rtl" />
             </div>
+            <div class="field">
+              <label>{{ t('fullNameEn') }}</label>
+              <input v-model="form.fullName" required dir="ltr" />
+            </div>
+          </div>
+          <div class="grid-2">
             <div class="field">
               <label>{{ t('businessName') }}</label>
               <input v-model="form.businessName" required />
             </div>
-          </div>
-          <div class="field">
-            <label>{{ t('businessNameAr') }}</label>
-            <input v-model="form.businessNameAr" />
+            <div class="field">
+              <label>{{ t('businessNameAr') }}</label>
+              <input v-model="form.businessNameAr" />
+            </div>
           </div>
           <div class="grid-2">
             <div class="field">
@@ -111,6 +117,7 @@ const devCode = ref('')
 
 const form = reactive({
   fullName: '',
+  fullNameAr: '',
   businessName: '',
   businessNameAr: '',
   email: '',

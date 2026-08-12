@@ -36,4 +36,7 @@ public static class NotificationTypes
     public const string PayoutCompleted = "PayoutCompleted";
     public const string PayoutRejected = "PayoutRejected";
     public const string PaymentPaid = "PaymentPaid";
+    public const string KycSubmitted = "KycSubmitted";
+    public const string KycApproved = "KycApproved";
+    public const string KycRejected = "KycRejected";
 }

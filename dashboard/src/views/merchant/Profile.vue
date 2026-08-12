@@ -15,8 +15,12 @@
 
       <form v-if="step === 'form'" class="profile-form" @submit.prevent="requestOtp">
         <label class="field">
-          <span>{{ $t('auth.fullName') }}</span>
-          <input v-model="form.fullName" required autocomplete="name" />
+          <span>{{ $t('auth.fullNameAr') }}</span>
+          <input v-model="form.fullNameAr" required autocomplete="name" dir="rtl" />
+        </label>
+        <label class="field">
+          <span>{{ $t('auth.fullNameEn') }}</span>
+          <input v-model="form.fullName" required autocomplete="name" dir="ltr" />
         </label>
         <label class="field">
           <span>{{ $t('auth.email') }}</span>
@@ -73,13 +77,55 @@
         </div>
       </div>
     </div>
+
+    <div class="card kyc-card">
+      <div class="kyc-head">
+        <div>
+          <h2>{{ $t('profile.kycTitle') }}</h2>
+          <p class="muted">{{ $t('profile.kycSub') }}</p>
+        </div>
+        <span class="badge" :class="kycBadgeClass">{{ kycStatusLabel }}</span>
+      </div>
+
+      <p v-if="kyc.status === 'Pending'" class="kyc-banner warn">{{ $t('profile.kycPendingHint') }}</p>
+      <p v-else-if="kyc.status === 'Approved'" class="kyc-banner ok">{{ $t('profile.kycApprovedHint') }}</p>
+      <p v-else-if="kyc.status === 'Rejected'" class="kyc-banner danger">
+        {{ $t('profile.kycRejectedHint') }}
+        <strong v-if="kyc.adminNotes">{{ kyc.adminNotes }}</strong>
+      </p>
+
+      <div class="kyc-grid">
+        <article v-for="doc in docs" :key="doc.key" class="kyc-item">
+          <div class="kyc-item-top">
+            <strong>{{ doc.label }}</strong>
+            <span class="muted tiny">{{ $t('profile.kycFormats') }}</span>
+          </div>
+          <div class="kyc-preview" :class="{ empty: !doc.url }">
+            <img v-if="doc.url" :src="mediaUrl(doc.url)" :alt="doc.label" />
+            <span v-else>{{ $t('profile.kycEmpty') }}</span>
+          </div>
+          <label class="upload-btn" :class="{ disabled: !kyc.canUpload || uploading === doc.key }">
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+              hidden
+              :disabled="!kyc.canUpload || !!uploading"
+              @change="onPick(doc.key, $event)"
+            />
+            {{ uploading === doc.key ? $t('common.loading') : (doc.url ? $t('profile.kycReplace') : $t('profile.kycUpload')) }}
+          </label>
+        </article>
+      </div>
+      <p v-if="kycError" class="error">{{ kycError }}</p>
+      <p v-if="kycOk" class="ok-msg">{{ kycOk }}</p>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { api } from '../../api'
+import { api, API_BASE } from '../../api'
 import { useAuthStore } from '../../stores/auth'
 
 const { t } = useI18n()
@@ -87,11 +133,20 @@ const auth = useAuthStore()
 
 const form = reactive({
   fullName: '',
+  fullNameAr: '',
   email: '',
   phone: '',
   businessName: '',
   businessNameAr: '',
   websiteUrl: ''
+})
+const kyc = reactive({
+  status: 'None',
+  idFrontUrl: '',
+  idBackUrl: '',
+  passportUrl: '',
+  adminNotes: '',
+  canUpload: true
 })
 const step = ref('form')
 const challengeId = ref('')
@@ -100,20 +155,57 @@ const otpCode = ref('')
 const devCode = ref('')
 const loading = ref(true)
 const saving = ref(false)
+const uploading = ref('')
 const error = ref('')
 const ok = ref('')
+const kycError = ref('')
+const kycOk = ref('')
+
+const docs = computed(() => [
+  { key: 'id-front', label: t('profile.kycIdFront'), url: kyc.idFrontUrl },
+  { key: 'id-back', label: t('profile.kycIdBack'), url: kyc.idBackUrl },
+  { key: 'passport', label: t('profile.kycPassport'), url: kyc.passportUrl }
+])
+
+const kycStatusLabel = computed(() => t(`profile.kycStatus.${kyc.status}`, kyc.status))
+const kycBadgeClass = computed(() => {
+  if (kyc.status === 'Approved') return 'ok'
+  if (kyc.status === 'Pending') return 'warn'
+  if (kyc.status === 'Rejected') return 'danger'
+  return ''
+})
+
+function mediaUrl(path) {
+  if (!path) return ''
+  if (/^https?:\/\//i.test(path)) return path
+  return `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`
+}
+
+function applyKyc(data) {
+  kyc.status = data.status || 'None'
+  kyc.idFrontUrl = data.idFrontUrl || data.kycIdFrontUrl || ''
+  kyc.idBackUrl = data.idBackUrl || data.kycIdBackUrl || ''
+  kyc.passportUrl = data.passportUrl || data.kycPassportUrl || ''
+  kyc.adminNotes = data.adminNotes || data.kycAdminNotes || ''
+  kyc.canUpload = data.canUpload === true
+}
 
 async function load() {
   loading.value = true
   error.value = ''
   try {
-    const { data } = await api.get('/api/merchant/profile')
-    form.fullName = data.fullName || ''
-    form.email = data.email || ''
-    form.phone = data.phone || ''
-    form.businessName = data.businessName || ''
-    form.businessNameAr = data.businessNameAr || ''
-    form.websiteUrl = data.websiteUrl || ''
+    const [{ data: profile }, { data: kycData }] = await Promise.all([
+      api.get('/api/merchant/profile'),
+      api.get('/api/merchant/kyc')
+    ])
+    form.fullName = profile.fullName || ''
+    form.fullNameAr = profile.fullNameAr || ''
+    form.email = profile.email || ''
+    form.phone = profile.phone || ''
+    form.businessName = profile.businessName || ''
+    form.businessNameAr = profile.businessNameAr || ''
+    form.websiteUrl = profile.websiteUrl || ''
+    applyKyc(kycData)
   } catch (e) {
     error.value = e.response?.data?.message || t('profile.loadFail')
   } finally {
@@ -124,6 +216,7 @@ async function load() {
 function payload() {
   return {
     fullName: form.fullName,
+    fullNameAr: form.fullNameAr,
     email: form.email,
     phone: form.phone || null,
     businessName: form.businessName,
@@ -170,6 +263,26 @@ async function confirmOtp() {
   }
 }
 
+async function onPick(docType, event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  uploading.value = docType
+  kycError.value = ''
+  kycOk.value = ''
+  try {
+    const body = new FormData()
+    body.append('file', file)
+    const { data } = await api.post(`/api/merchant/kyc/${docType}`, body)
+    applyKyc(data)
+    kycOk.value = data.status === 'Pending' ? t('profile.kycSubmitted') : t('profile.kycUploaded')
+  } catch (e) {
+    kycError.value = e.response?.data?.message || t('profile.kycUploadFail')
+  } finally {
+    uploading.value = ''
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -192,14 +305,8 @@ onMounted(load)
   gap: 14px;
   max-width: 460px;
 }
-.field {
-  display: grid;
-  gap: 6px;
-}
-.field span {
-  font-size: 0.85rem;
-  color: var(--muted, #64748b);
-}
+.field { display: grid; gap: 6px; }
+.field span { font-size: 0.85rem; color: var(--muted, #64748b); }
 .field input {
   border: 1px solid #e2e8f0;
   border-radius: 10px;
@@ -213,20 +320,83 @@ onMounted(load)
   font-size: 1.25rem;
 }
 .otp-sub { margin: 0; color: #475569; }
-.otp-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
+.otp-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .dev-otp {
   margin: 0;
   font-family: ui-monospace, monospace;
   color: #b45309;
   font-size: 0.9rem;
 }
-.ok-msg {
-  color: #15803d;
-  margin: 0;
+.ok-msg { color: #15803d; margin: 0; font-size: 0.9rem; }
+
+.kyc-card { margin-top: 16px; }
+.kyc-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+.kyc-head h2 { margin: 0 0 4px; font-size: 1.15rem; }
+.kyc-banner {
+  padding: 12px 14px;
+  border-radius: 12px;
+  margin: 0 0 16px;
   font-size: 0.9rem;
+  font-weight: 600;
+}
+.kyc-banner.warn { background: #fffbeb; color: #92400e; border: 1px solid #fcd34d; }
+.kyc-banner.ok { background: #ecfdf5; color: #166534; border: 1px solid #86efac; }
+.kyc-banner.danger { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+.kyc-banner strong { display: block; margin-top: 6px; font-weight: 700; }
+.kyc-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.kyc-item {
+  border: 1px solid var(--line, #e2e8f0);
+  border-radius: 14px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  background: #fff;
+}
+.kyc-item-top { display: grid; gap: 2px; }
+.tiny { font-size: 0.75rem; }
+.kyc-preview {
+  aspect-ratio: 4 / 3;
+  border-radius: 12px;
+  border: 1px dashed #cbd5e1;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: #f8fafc;
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+.kyc-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.upload-btn {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #031838;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.upload-btn.disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+@media (max-width: 900px) {
+  .kyc-grid { grid-template-columns: 1fr; }
 }
 </style>

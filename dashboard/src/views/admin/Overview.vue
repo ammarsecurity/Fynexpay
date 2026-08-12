@@ -122,6 +122,9 @@
             <div class="tx-main">
               <div class="tx-title-row">
                 <strong class="mono">{{ p.orderId || shortId(p.id) }}</strong>
+                <span class="badge" :class="p.isTest ? 'test' : 'live'">
+                  {{ p.isTest ? $t('payments.modeTest') : $t('payments.modeLive') }}
+                </span>
                 <span class="badge" :class="statusClass(p.status)">{{ $t(`status.${p.status}`, p.status) }}</span>
               </div>
               <div class="tx-meta">
