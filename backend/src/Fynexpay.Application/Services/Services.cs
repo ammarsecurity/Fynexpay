@@ -1486,29 +1486,32 @@ public class MerchantAdminService
         return m.WebhookSecret;
     }
 
-    public async Task<PlatformStatsDto> GetStatsAsync(CancellationToken ct = default)
+    public async Task<PlatformStatsDto> GetStatsAsync(string? mode = "live", CancellationToken ct = default)
     {
         var merchants = await _db.Merchants.CountAsync(ct);
         var active = await _db.Merchants.CountAsync(m => m.Status == MerchantStatus.Active, ct);
         var pendingMerchants = await _db.Merchants.CountAsync(m => m.Status == MerchantStatus.Pending, ct);
 
-        var payments = await _db.Payments.CountAsync(ct);
-        var paidCount = await _db.Payments.CountAsync(p => p.Status == PaymentStatus.Paid, ct);
-        var pendingPayments = await _db.Payments.CountAsync(p => p.Status == PaymentStatus.Pending, ct);
-        var failedPayments = await _db.Payments.CountAsync(p =>
+        var paymentsQuery = ApplyPaymentModeFilter(_db.Payments.AsQueryable(), mode);
+
+        var payments = await paymentsQuery.CountAsync(ct);
+        var paidCount = await paymentsQuery.CountAsync(p => p.Status == PaymentStatus.Paid, ct);
+        var pendingPayments = await paymentsQuery.CountAsync(p => p.Status == PaymentStatus.Pending, ct);
+        var failedPayments = await paymentsQuery.CountAsync(p =>
             p.Status == PaymentStatus.Failed
             || p.Status == PaymentStatus.Declined
             || p.Status == PaymentStatus.Expired
             || p.Status == PaymentStatus.Cancelled, ct);
 
-        var gross = await _db.Payments.Where(p => p.Status == PaymentStatus.Paid).SumAsync(p => (decimal?)p.Amount, ct) ?? 0;
-        var fees = await _db.Payments.Where(p => p.Status == PaymentStatus.Paid).SumAsync(p => (decimal?)p.PlatformFee, ct) ?? 0;
-        var net = await _db.Payments.Where(p => p.Status == PaymentStatus.Paid).SumAsync(p => (decimal?)p.NetAmount, ct) ?? 0;
+        var paidQuery = paymentsQuery.Where(p => p.Status == PaymentStatus.Paid);
+        var gross = await paidQuery.SumAsync(p => (decimal?)p.Amount, ct) ?? 0;
+        var fees = await paidQuery.SumAsync(p => (decimal?)p.PlatformFee, ct) ?? 0;
+        var net = await paidQuery.SumAsync(p => (decimal?)p.NetAmount, ct) ?? 0;
         var avgTicket = paidCount > 0 ? Math.Round(gross / paidCount, 0) : 0m;
         var pendingPayouts = await _db.PayoutRequests.CountAsync(p => p.Status == PayoutStatus.Pending, ct);
 
         var fromUtc = DateTime.UtcNow.Date.AddDays(-13);
-        var recentPaid = await _db.Payments
+        var recentPaid = await paymentsQuery
             .Where(p => p.Status == PaymentStatus.Paid
                         && (p.PaidAtUtc ?? p.CreatedAtUtc) >= fromUtc)
             .Select(p => new { Day = p.PaidAtUtc ?? p.CreatedAtUtc, p.Amount, p.PlatformFee })
@@ -1530,7 +1533,7 @@ public class MerchantAdminService
                 rows?.Sum(x => x.PlatformFee) ?? 0));
         }
 
-        var statusRows = await _db.Payments
+        var statusRows = await paymentsQuery
             .GroupBy(p => p.Status)
             .Select(g => new { Status = g.Key, Count = g.Count(), Amount = g.Sum(x => x.Amount) })
             .ToListAsync(ct);
@@ -1539,7 +1542,7 @@ public class MerchantAdminService
             .Select(x => new NamedCountDto(x.Status.ToString(), x.Count, x.Amount))
             .ToList();
 
-        var providerRows = await _db.Payments
+        var providerRows = await paymentsQuery
             .Where(p => p.Provider != PaymentProviderType.Auto)
             .GroupBy(p => p.Provider)
             .Select(g => new { Provider = g.Key, Count = g.Count(), Amount = g.Sum(x => x.Amount) })
@@ -1554,6 +1557,21 @@ public class MerchantAdminService
             payments, paidCount, pendingPayments, failedPayments,
             gross, fees, net, avgTicket, pendingPayouts,
             last14, byStatus, byProvider);
+    }
+
+    private static IQueryable<Payment> ApplyPaymentModeFilter(IQueryable<Payment> query, string? mode)
+    {
+        if (string.IsNullOrWhiteSpace(mode))
+            return query.Where(p => !p.IsTest);
+
+        var m = mode.Trim();
+        if (m.Equals("test", StringComparison.OrdinalIgnoreCase))
+            return query.Where(p => p.IsTest);
+        if (m.Equals("all", StringComparison.OrdinalIgnoreCase)
+            || m.Equals("any", StringComparison.OrdinalIgnoreCase))
+            return query;
+        // live / production / prod (default)
+        return query.Where(p => !p.IsTest);
     }
 }
 

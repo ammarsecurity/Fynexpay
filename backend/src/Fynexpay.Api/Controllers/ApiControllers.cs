@@ -565,7 +565,8 @@ public class AdminController : ControllerBase
     }
 
     [HttpGet("stats")]
-    public async Task<ActionResult<PlatformStatsDto>> Stats(CancellationToken ct) => Ok(await _merchants.GetStatsAsync(ct));
+    public async Task<ActionResult<PlatformStatsDto>> Stats([FromQuery] string? mode, CancellationToken ct)
+        => Ok(await _merchants.GetStatsAsync(mode, ct));
 
     [HttpGet("platforms")]
     public async Task<ActionResult<IEnumerable<MerchantPlatformDto>>> Platforms(

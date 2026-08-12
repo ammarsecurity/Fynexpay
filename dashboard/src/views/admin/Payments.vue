@@ -100,6 +100,7 @@
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '../../api'
 import DataToolbar from '../../components/DataToolbar.vue'
@@ -108,12 +109,13 @@ import ProviderBadge from '../../components/ProviderBadge.vue'
 import PaymentDetailsModal from '../../components/PaymentDetailsModal.vue'
 
 const { locale } = useI18n()
+const route = useRoute()
 const payments = ref([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
 const selectedId = ref('')
-const mode = ref('live')
+const mode = ref(route.query.mode === 'test' ? 'test' : 'live')
 const filters = reactive({ q: '', status: '', provider: '', from: '', to: '' })
 const applied = reactive({ q: '', status: '', provider: '', from: '', to: '' })
 

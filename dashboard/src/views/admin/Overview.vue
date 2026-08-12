@@ -6,12 +6,30 @@
         <p class="sub">{{ $t('adminOverview.sub') }}</p>
       </div>
       <div class="head-actions">
+        <div class="mode-switch" role="tablist" :aria-label="$t('payments.modeLabel')">
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="mode === 'live'"
+            :class="{ active: mode === 'live' }"
+            @click="setMode('live')"
+          >{{ $t('payments.modeLive') }}</button>
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="mode === 'test'"
+            :class="{ active: mode === 'test', test: true }"
+            @click="setMode('test')"
+          >{{ $t('payments.modeTest') }}</button>
+        </div>
         <span class="period-chip">{{ $t('adminOverview.period14') }}</span>
         <button class="btn secondary" type="button" :disabled="loading" @click="load">
           {{ loading ? $t('common.loading') : $t('common.refresh') }}
         </button>
       </div>
     </div>
+
+    <p class="mode-hint muted">{{ mode === 'test' ? $t('payments.modeTestHint') : $t('payments.modeLiveHint') }}</p>
 
     <p v-if="error" class="error">{{ error }}</p>
 
@@ -114,7 +132,7 @@
       <div class="card">
         <div class="card-head">
           <h3>{{ $t('adminOverview.recent') }}</h3>
-          <RouterLink class="btn ghost" to="/admin/payments">{{ $t('common.viewAll') }}</RouterLink>
+          <RouterLink class="btn ghost" :to="{ path: '/admin/payments', query: { mode } }">{{ $t('common.viewAll') }}</RouterLink>
         </div>
         <div v-if="payments.length" class="recent-list">
           <article class="tx-item admin-tx" v-for="p in payments" :key="p.id">
@@ -214,6 +232,7 @@ const payments = ref([])
 const pendingMerchants = ref([])
 const loading = ref(false)
 const error = ref('')
+const mode = ref('live')
 
 const firstName = computed(() => (auth.user?.fullName || 'Admin').split(/\s+/)[0])
 
@@ -311,8 +330,8 @@ async function load() {
   error.value = ''
   try {
     const [s, p, m] = await Promise.all([
-      api.get('/api/admin/stats'),
-      api.get('/api/admin/payments', { params: { page: 1, pageSize: 8 } }),
+      api.get('/api/admin/stats', { params: { mode: mode.value } }),
+      api.get('/api/admin/payments', { params: { page: 1, pageSize: 8, mode: mode.value } }),
       api.get('/api/admin/merchants', { params: { status: 'Pending', page: 1, pageSize: 5 } })
     ])
     stats.value = s.data
@@ -325,11 +344,45 @@ async function load() {
   }
 }
 
+async function setMode(next) {
+  if (mode.value === next) return
+  mode.value = next
+  await load()
+}
+
 onMounted(load)
 </script>
 
 <style scoped>
 .head-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.mode-switch {
+  display: inline-flex;
+  background: #f1f5f9;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+}
+.mode-switch button {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 7px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  color: var(--muted);
+}
+.mode-switch button.active {
+  background: #fff;
+  color: var(--brand-secondary);
+  box-shadow: var(--shadow-sm);
+}
+.mode-switch button.active.test {
+  color: #c2410c;
+}
+.mode-hint { margin: 0 0 14px; font-size: 0.88rem; }
 .period-chip {
   background: var(--brand-soft);
   color: var(--brand-secondary);
