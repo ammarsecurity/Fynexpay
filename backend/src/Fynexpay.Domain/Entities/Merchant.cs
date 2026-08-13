@@ -42,6 +42,15 @@ public class Merchant : BaseEntity
     public DateTime? KycSubmittedAtUtc { get; set; }
     public DateTime? KycReviewedAtUtc { get; set; }
 
+    /// <summary>اسم البنك للتحويل عند السحب.</summary>
+    public string? BankName { get; set; }
+    /// <summary>اسم صاحب الحساب كما في البنك.</summary>
+    public string? BankAccountHolder { get; set; }
+    /// <summary>رقم الحساب البنكي.</summary>
+    public string? BankAccountNumber { get; set; }
+    /// <summary>رقم الآيبان (اختياري).</summary>
+    public string? BankIban { get; set; }
+
     public Wallet? Wallet { get; set; }
     public ICollection<User> Users { get; set; } = new List<User>();
     public ICollection<ApiKey> ApiKeys { get; set; } = new List<ApiKey>();

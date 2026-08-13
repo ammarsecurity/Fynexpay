@@ -31,9 +31,7 @@ public sealed class MerchantApiExamplesFilter : ISchemaFilter, IOperationFilter
         {
             schema.Example = new OpenApiObject
             {
-                ["amount"] = new OpenApiInteger(100000),
-                ["destinationType"] = new OpenApiString("bank"),
-                ["destinationDetails"] = new OpenApiString("IBAN / account details")
+                ["amount"] = new OpenApiInteger(100000)
             };
         }
         else if (context.Type == typeof(PublicPaymentDto))

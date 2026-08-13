@@ -157,6 +157,10 @@ public static class DependencyInjection
         await EnsureOtpChallengesTableAsync(db);
         await EnsureColumnAsync(db, "OtpChallenges", "TargetEmail", "varchar(256) NULL");
         await EnsureColumnAsync(db, "Users", "FullNameAr", "varchar(200) NULL");
+        await EnsureColumnAsync(db, "Merchants", "BankName", "varchar(200) NULL");
+        await EnsureColumnAsync(db, "Merchants", "BankAccountHolder", "varchar(200) NULL");
+        await EnsureColumnAsync(db, "Merchants", "BankAccountNumber", "varchar(64) NULL");
+        await EnsureColumnAsync(db, "Merchants", "BankIban", "varchar(64) NULL");
         await EnsureNotificationsTableAsync(db);
     }
 

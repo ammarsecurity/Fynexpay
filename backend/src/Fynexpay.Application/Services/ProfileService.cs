@@ -135,6 +135,68 @@ public class ProfileService
         return ToAuth(user);
     }
 
+    public async Task<MerchantPayoutAccountDto> GetPayoutAccountAsync(Guid userId, CancellationToken ct = default)
+    {
+        var merchant = await RequireMerchantAsync(userId, ct);
+        return MerchantBankAccount.Map(merchant);
+    }
+
+    public async Task<MerchantPayoutAccountDto> UpdatePayoutAccountAsync(
+        Guid userId,
+        UpdateMerchantPayoutAccountRequest request,
+        CancellationToken ct = default)
+    {
+        var user = await _db.Users
+            .Include(u => u.Merchant)
+            .FirstOrDefaultAsync(u => u.Id == userId, ct)
+            ?? throw new InvalidOperationException("المستخدم غير موجود");
+
+        if (user.Role is not (UserRole.MerchantOwner or UserRole.MerchantStaff) || user.Merchant is null)
+            throw new UnauthorizedAccessException("غير مصرح");
+
+        ApplyPayoutAccount(user.Merchant, request);
+        user.Merchant.UpdatedAtUtc = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return MerchantBankAccount.Map(user.Merchant);
+    }
+
+    public static void ApplyPayoutAccount(Domain.Entities.Merchant merchant, UpdateMerchantPayoutAccountRequest request)
+    {
+        PasswordRules.ValidateRequired(request.BankName, "اسم البنك");
+        PasswordRules.ValidateRequired(request.BankAccountHolder, "اسم صاحب الحساب");
+        PasswordRules.ValidateRequired(request.BankAccountNumber, "رقم الحساب");
+
+        var account = MerchantBankAccount.NormalizeAccount(request.BankAccountNumber);
+        if (account.Length < 6)
+            throw new ArgumentException("رقم الحساب غير صالح");
+
+        string? iban = null;
+        if (!string.IsNullOrWhiteSpace(request.BankIban))
+        {
+            iban = MerchantBankAccount.NormalizeIban(request.BankIban);
+            if (iban.Length < 15)
+                throw new ArgumentException("رقم الآيبان غير صالح");
+        }
+
+        merchant.BankName = request.BankName.Trim();
+        merchant.BankAccountHolder = request.BankAccountHolder.Trim();
+        merchant.BankAccountNumber = account;
+        merchant.BankIban = iban;
+    }
+
+    private async Task<Domain.Entities.Merchant> RequireMerchantAsync(Guid userId, CancellationToken ct)
+    {
+        var user = await _db.Users
+            .AsNoTracking()
+            .Include(u => u.Merchant)
+            .FirstOrDefaultAsync(u => u.Id == userId, ct)
+            ?? throw new InvalidOperationException("المستخدم غير موجود");
+
+        if (user.Merchant is null)
+            throw new InvalidOperationException("حساب التاجر غير موجود");
+        return user.Merchant;
+    }
+
     private AuthResponse ToAuth(Domain.Entities.User user)
     {
         var token = _jwt.CreateToken(user.Id, user.Email, user.Role.ToString(), user.MerchantId, user.FullName);
@@ -171,6 +233,11 @@ public class ProfileService
             kyc?.AdminNotes,
             kyc?.SubmittedAtUtc,
             kyc?.ReviewedAtUtc,
-            kyc?.CanUpload ?? true);
+            kyc?.CanUpload ?? true,
+            m?.BankName,
+            m?.BankAccountHolder,
+            m?.BankAccountNumber,
+            m?.BankIban,
+            m != null && MerchantBankAccount.IsComplete(m));
     }
 }

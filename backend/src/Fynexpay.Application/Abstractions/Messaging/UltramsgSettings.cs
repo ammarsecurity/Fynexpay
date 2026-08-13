@@ -23,12 +23,16 @@ public class UltramsgSettings
     public string InstanceId { get; set; } = string.Empty;
     public string Token { get; set; } = string.Empty;
     public string DefaultCountryCode { get; set; } = "964";
+    /// <summary>رقم واتساب الإدارة لاستلام تنبيهات التشغيل (مثل طلبات السحب).</summary>
+    public string? AdminAlertPhone { get; set; }
     public string MerchantRegisterMessage { get; set; } =
         "رمز التحقق من Fynexpay: {code}\nصالح لمدة 5 دقائق. لا تشاركه مع أحد.";
     public string CheckoutMessage { get; set; } =
         "رمز تأكيد الدفع عبر Fynexpay: {code}\nصالح لمدة 5 دقائق.";
     public string ProfileChangeMessage { get; set; } =
         "رمز تأكيد تعديل الملف الشخصي في Fynexpay: {code}\nصالح لمدة 5 دقائق. لا تشاركه مع أحد.";
+    public string PasswordResetMessage { get; set; } =
+        "رمز استعادة كلمة المرور في Fynexpay: {code}\nصالح لمدة 5 دقائق. لا تشاركه مع أحد.";
 
     // —— Email (SMTP) ——
     public bool EmailEnabled { get; set; }

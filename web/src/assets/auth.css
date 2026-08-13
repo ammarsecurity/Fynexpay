@@ -122,6 +122,22 @@
   border-color: rgba(3, 24, 56, 0.55);
   box-shadow: 0 0 0 4px rgba(3, 24, 56, 0.12);
 }
+.forgot-row {
+  display: flex;
+  justify-content: flex-start;
+  margin: -4px 0 12px;
+}
+[dir="ltr"] .forgot-row { justify-content: flex-end; }
+.forgot-link {
+  color: var(--brand-secondary);
+  font-weight: 800;
+  font-size: 0.88rem;
+}
+.hint {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
 .grid-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;

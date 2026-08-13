@@ -6,7 +6,11 @@
 import { onMounted } from 'vue'
 
 const WEB_URL = (import.meta.env.VITE_WEB_URL || 'http://localhost:5174').replace(/\/$/, '')
-const path = window.location.pathname.includes('register') ? '/register' : '/login'
+const path = window.location.pathname.includes('register')
+  ? '/register'
+  : window.location.pathname.includes('forgot')
+    ? '/forgot'
+    : '/login'
 
 onMounted(() => {
   window.location.replace(`${WEB_URL}${path}${window.location.search || ''}`)

@@ -59,6 +59,9 @@
             <label>{{ $t('auth.password') }}</label>
             <input v-model="password" type="password" autocomplete="current-password" placeholder="••••••••" />
           </div>
+          <p class="forgot-row">
+            <a class="forgot" :href="webForgotUrl">{{ $t('auth.forgotPassword') }}</a>
+          </p>
           <button class="btn" type="submit" :disabled="loading">
             <i class="bi bi-box-arrow-in-left" aria-hidden="true"></i>
             {{ loading ? $t('auth.signingIn') : $t('auth.signIn') }}
@@ -93,6 +96,7 @@ const password = ref('')
 const error = ref('')
 const loading = ref(false)
 const year = new Date().getFullYear()
+const webForgotUrl = `${(import.meta.env.VITE_WEB_URL || 'https://fynexpay.net').replace(/\/$/, '')}/forgot-password`
 
 async function submit() {
   error.value = ''
@@ -107,3 +111,18 @@ async function submit() {
   }
 }
 </script>
+
+<style scoped>
+.forgot-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: -4px 0 12px;
+}
+.forgot {
+  color: var(--brand-secondary);
+  font-weight: 700;
+  font-size: 0.88rem;
+  text-decoration: none;
+}
+.forgot:hover { text-decoration: underline; }
+</style>

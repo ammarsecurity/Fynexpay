@@ -1,6 +1,10 @@
 <template>
   <div>
-    <h1>{{ $t('payouts.title') }}</h1>
+    <div class="page-head">
+      <div>
+        <h1>{{ $t('payouts.title') }}</h1>
+      </div>
+    </div>
 
     <DataToolbar
       v-model="filters"
@@ -15,8 +19,9 @@
       <table>
         <thead>
           <tr>
+            <th>{{ $t('payouts.merchant') }}</th>
             <th>{{ $t('common.amount') }}</th>
-            <th>{{ $t('payouts.details') }}</th>
+            <th>{{ $t('payouts.destination') }}</th>
             <th>{{ $t('common.status') }}</th>
             <th>{{ $t('common.date') }}</th>
             <th>{{ $t('common.actions') }}</th>
@@ -24,15 +29,19 @@
         </thead>
         <tbody>
           <tr v-for="p in payouts" :key="p.id">
-            <td>{{ format(p.amount) }}</td>
-            <td>{{ p.destinationType }} — {{ p.destinationDetails }}</td>
-            <td><span class="badge">{{ $t(`status.${p.status}`, p.status) }}</span></td>
+            <td>
+              <strong>{{ p.merchantName || '—' }}</strong>
+            </td>
+            <td class="mono">{{ format(p.amount) }}</td>
+            <td class="dest">{{ p.destinationDetails }}</td>
+            <td><span class="badge" :class="badge(p.status)">{{ $t(`status.${p.status}`, p.status) }}</span></td>
             <td>{{ formatDate(p.createdAtUtc) }}</td>
             <td class="row" v-if="p.status === 'Pending' || p.status === 'Approved'">
               <button class="btn" @click="review(p.id, 'approve')">{{ $t('payouts.approve') }}</button>
               <button class="btn accent" @click="review(p.id, 'complete')">{{ $t('payouts.complete') }}</button>
               <button class="btn danger" @click="review(p.id, 'reject')">{{ $t('payouts.reject') }}</button>
             </td>
+            <td v-else>—</td>
           </tr>
         </tbody>
       </table>
@@ -63,11 +72,16 @@ const filters = reactive({ q: '', status: '', from: '', to: '' })
 const applied = reactive({ q: '', status: '', from: '', to: '' })
 
 function format(v) {
-  const loc = locale.value === 'ar' ? 'ar-IQ' : 'en-IQ'
+  const loc = locale.value === 'ar' ? 'en-IQ' : 'en-IQ'
   return new Intl.NumberFormat(loc).format(v ?? 0) + (locale.value === 'ar' ? ' د.ع' : ' IQD')
 }
 function formatDate(v) {
   return new Date(v).toLocaleString(locale.value === 'ar' ? 'ar-IQ' : 'en-GB')
+}
+function badge(s) {
+  if (s === 'Completed' || s === 'Approved') return 'ok'
+  if (s === 'Pending') return 'warn'
+  return 'danger'
 }
 
 async function load() {
@@ -106,3 +120,8 @@ async function review(id, action) {
 
 onMounted(load)
 </script>
+
+<style scoped>
+.dest { max-width: 360px; white-space: pre-wrap; font-size: 0.86rem; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; }
+</style>

@@ -175,6 +175,35 @@ public class AuthService
         var token = _jwt.CreateToken(user.Id, user.Email, user.Role.ToString(), user.MerchantId, user.FullName);
         return new AuthResponse(token, user.Id, user.Email, user.FullName, user.Role.ToString(), user.MerchantId, user.Merchant?.Status.ToString());
     }
+
+    public async Task<OtpSendResultDto> SendForgotPasswordOtpAsync(ForgotPasswordRequest request, CancellationToken ct = default)
+    {
+        PasswordRules.ValidateRequired(request.Phone, "رقم الهاتف");
+        var result = await _otp.SendPasswordResetOtpAsync(request.Phone, ct);
+        return new OtpSendResultDto(result.ChallengeId, result.MaskedDestination, result.ExpiresInSeconds, result.DevCode, result.Via);
+    }
+
+    public async Task<AuthResponse> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken ct = default)
+    {
+        PasswordRules.Validate(request.NewPassword);
+        var pending = await _otp.ConsumePasswordResetChallengeAsync(request.ChallengeId, request.Code, ct);
+        var user = await _db.Users.Include(u => u.Merchant)
+            .FirstOrDefaultAsync(u => u.Id == pending.UserId, ct)
+            ?? throw new InvalidOperationException("المستخدم غير موجود");
+
+        if (!user.IsActive)
+            throw new InvalidOperationException("الحساب غير نشط");
+        if (user.Merchant is { Status: MerchantStatus.Suspended or MerchantStatus.Rejected })
+            throw new UnauthorizedAccessException("حساب التاجر موقوف أو مرفوض");
+
+        user.PasswordHash = _passwordHasher.Hash(request.NewPassword);
+        user.UpdatedAtUtc = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        await _otp.InvalidateChallengeAsync(request.ChallengeId, ct);
+
+        var token = _jwt.CreateToken(user.Id, user.Email, user.Role.ToString(), user.MerchantId, user.FullName);
+        return new AuthResponse(token, user.Id, user.Email, user.FullName, user.Role.ToString(), user.MerchantId, user.Merchant?.Status.ToString());
+    }
 }
 
 public class PaymentService
@@ -1023,10 +1052,25 @@ public class PayoutService
         if (request.Amount <= 0)
             throw new ArgumentException("المبلغ غير صالح");
 
-        var merchant = await _db.Merchants.AsNoTracking().FirstOrDefaultAsync(m => m.Id == merchantId, ct)
+        var merchant = await _db.Merchants.FirstOrDefaultAsync(m => m.Id == merchantId, ct)
             ?? throw new InvalidOperationException("التاجر غير موجود");
         if (merchant.Status != MerchantStatus.Active)
             throw new InvalidOperationException("حساب التاجر غير مفعّل");
+
+        var destinationType = string.IsNullOrWhiteSpace(request.DestinationType)
+            ? "BankTransfer"
+            : request.DestinationType.Trim();
+        var destinationDetails = string.IsNullOrWhiteSpace(request.DestinationDetails)
+            ? null
+            : request.DestinationDetails.Trim();
+
+        if (string.IsNullOrWhiteSpace(destinationDetails))
+        {
+            if (!MerchantBankAccount.IsComplete(merchant))
+                throw new InvalidOperationException("أضف رقم الحساب البنكي في الملف الشخصي قبل طلب السحب");
+            destinationType = "BankTransfer";
+            destinationDetails = MerchantBankAccount.FormatDetails(merchant);
+        }
 
         await using var tx = await _db.BeginTransactionAsync(ct);
 
@@ -1042,8 +1086,8 @@ public class PayoutService
         {
             MerchantId = merchantId,
             Amount = request.Amount,
-            DestinationType = request.DestinationType,
-            DestinationDetails = request.DestinationDetails,
+            DestinationType = destinationType,
+            DestinationDetails = destinationDetails,
             Status = PayoutStatus.Pending
         };
         _db.PayoutRequests.Add(payout);
@@ -1061,16 +1105,32 @@ public class PayoutService
         await _db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
 
+        var merchantLabel = merchant.BusinessNameAr ?? merchant.BusinessName;
+        var waBody =
+            $"طلب سحب جديد من التاجر «{merchantLabel}».\n" +
+            $"المبلغ: {payout.Amount:N0} {payout.Currency}\n" +
+            (MerchantBankAccount.IsComplete(merchant)
+                ? MerchantBankAccount.FormatWhatsAppBlock(merchant)
+                : $"تفاصيل التحويل: {destinationDetails}");
+
         await _notifications.NotifyAdminsSafeAsync(
             NotificationTypes.PayoutRequested,
             "طلب سحب جديد",
-            $"طلب سحب بمبلغ {payout.Amount:N0} {payout.Currency} من تاجر {merchant.BusinessName}.",
+            waBody,
             "/admin/payouts",
             merchantId,
-            new { payoutId = payout.Id, amount = payout.Amount, merchantId },
+            new
+            {
+                payoutId = payout.Id,
+                amount = payout.Amount,
+                merchantId,
+                merchantName = merchantLabel,
+                bankName = merchant.BankName,
+                accountNumber = merchant.BankAccountNumber
+            },
             ct);
 
-        return Map(payout);
+        return Map(payout, merchant);
     }
 
     public async Task<IReadOnlyList<PayoutDto>> ListForMerchantAsync(Guid merchantId, CancellationToken ct = default)
@@ -1078,7 +1138,7 @@ public class PayoutService
         var list = await _db.PayoutRequests.Where(p => p.MerchantId == merchantId)
             .OrderByDescending(p => p.CreatedAtUtc)
             .ToListAsync(ct);
-        return list.Select(Map).ToList();
+        return list.Select(p => Map(p, merchant: null)).ToList();
     }
 
     public async Task<PayoutDto> ReviewAsync(Guid payoutId, Guid adminUserId, ReviewPayoutRequest request, CancellationToken ct = default)
@@ -1158,12 +1218,14 @@ public class PayoutService
             payout.MerchantId, type, title, body, "/merchant/payouts",
             new { payoutId = payout.Id, status = payout.Status.ToString(), amount = payout.Amount }, ct);
 
-        return Map(payout);
+        return Map(payout, payout.Merchant);
     }
 
-    private static PayoutDto Map(PayoutRequest p) => new(
+    public static PayoutDto Map(PayoutRequest p, Merchant? merchant = null) => new(
         p.Id, p.Amount, p.Currency, p.Status.ToString(), p.DestinationType, p.DestinationDetails,
-        p.AdminNote, p.CreatedAtUtc, p.ReviewedAtUtc, p.CompletedAtUtc);
+        p.AdminNote, p.CreatedAtUtc, p.ReviewedAtUtc, p.CompletedAtUtc,
+        merchant?.Id ?? p.MerchantId,
+        merchant?.BusinessNameAr ?? merchant?.BusinessName ?? p.Merchant?.BusinessNameAr ?? p.Merchant?.BusinessName);
 }
 
 public class MerchantAdminService
@@ -1242,7 +1304,11 @@ public class MerchantAdminService
             m.KycPassportUrl,
             m.KycAdminNotes,
             m.KycSubmittedAtUtc,
-            m.KycReviewedAtUtc);
+            m.KycReviewedAtUtc,
+            m.BankName,
+            m.BankAccountHolder,
+            m.BankAccountNumber,
+            m.BankIban);
     }
 
     public async Task<MerchantDto> UpdateAsync(Guid merchantId, UpdateMerchantAdminRequest request, CancellationToken ct = default)
@@ -1313,6 +1379,17 @@ public class MerchantAdminService
         if (request.QiEnabled.HasValue) merchant.QiEnabled = request.QiEnabled.Value;
         if (request.SuperQiEnabled.HasValue) merchant.SuperQiEnabled = request.SuperQiEnabled.Value;
         if (request.AlqasehEnabled.HasValue) merchant.AlqasehEnabled = request.AlqasehEnabled.Value;
+        if (request.BankName != null
+            || request.BankAccountHolder != null
+            || request.BankAccountNumber != null
+            || request.BankIban != null)
+        {
+            ProfileService.ApplyPayoutAccount(merchant, new UpdateMerchantPayoutAccountRequest(
+                request.BankName ?? merchant.BankName ?? "",
+                request.BankAccountHolder ?? merchant.BankAccountHolder ?? "",
+                request.BankAccountNumber ?? merchant.BankAccountNumber ?? "",
+                request.BankIban ?? merchant.BankIban));
+        }
 
         var owner = merchant.Users.OrderBy(u => u.CreatedAtUtc).FirstOrDefault();
         if (owner != null)

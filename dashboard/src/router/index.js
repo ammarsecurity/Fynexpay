@@ -3,6 +3,8 @@ import { useAuthStore } from '../stores/auth'
 
 const routes = [
   { path: '/login', name: 'login', component: () => import('../views/AuthRedirect.vue'), meta: { guest: true } },
+  { path: '/forgot', name: 'forgot', component: () => import('../views/AuthRedirect.vue'), meta: { guest: true } },
+  { path: '/forgot-password', name: 'forgot-password', component: () => import('../views/AuthRedirect.vue'), meta: { guest: true } },
   { path: '/register', name: 'register', component: () => import('../views/AuthRedirect.vue'), meta: { guest: true } },
   { path: '/auth/handoff', name: 'auth-handoff', component: () => import('../views/AuthHandoff.vue'), meta: { guest: true } },
   {

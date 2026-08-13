@@ -50,6 +50,10 @@ public class AppDbContext : DbContext, IAppDbContext
             e.Property(x => x.KycIdBackUrl).HasMaxLength(500);
             e.Property(x => x.KycPassportUrl).HasMaxLength(500);
             e.Property(x => x.KycAdminNotes).HasMaxLength(1000);
+            e.Property(x => x.BankName).HasMaxLength(200);
+            e.Property(x => x.BankAccountHolder).HasMaxLength(200);
+            e.Property(x => x.BankAccountNumber).HasMaxLength(64);
+            e.Property(x => x.BankIban).HasMaxLength(64);
             e.HasOne(x => x.Wallet).WithOne(w => w.Merchant).HasForeignKey<Wallet>(w => w.MerchantId);
         });
 

@@ -100,6 +100,16 @@
             </section>
 
             <section class="panel">
+              <h3>{{ $t('merchants.sectionBank') }}</h3>
+              <dl class="kv">
+                <div><dt>{{ $t('profile.bankName') }}</dt><dd>{{ detail.bankName || '—' }}</dd></div>
+                <div><dt>{{ $t('profile.bankHolder') }}</dt><dd>{{ detail.bankAccountHolder || '—' }}</dd></div>
+                <div><dt>{{ $t('profile.bankNumber') }}</dt><dd class="mono">{{ detail.bankAccountNumber || '—' }}</dd></div>
+                <div><dt>{{ $t('profile.bankIban') }}</dt><dd class="mono">{{ detail.bankIban || '—' }}</dd></div>
+              </dl>
+            </section>
+
+            <section class="panel">
               <h3>{{ $t('merchants.sectionWallet') }}</h3>
               <dl class="kv">
                 <div><dt>{{ $t('merchants.lifetimeGross') }}</dt><dd>{{ money(detail.lifetimeGross) }}</dd></div>
@@ -210,6 +220,28 @@
               <label class="field full">
                 <span>{{ $t('merchants.notes') }}</span>
                 <textarea v-model="form.notes" rows="3" />
+              </label>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h3>{{ $t('merchants.sectionBank') }}</h3>
+            <div class="form-grid">
+              <label class="field">
+                <span>{{ $t('profile.bankName') }}</span>
+                <input v-model="form.bankName" />
+              </label>
+              <label class="field">
+                <span>{{ $t('profile.bankHolder') }}</span>
+                <input v-model="form.bankAccountHolder" />
+              </label>
+              <label class="field">
+                <span>{{ $t('profile.bankNumber') }}</span>
+                <input v-model="form.bankAccountNumber" dir="ltr" />
+              </label>
+              <label class="field">
+                <span>{{ $t('profile.bankIban') }}</span>
+                <input v-model="form.bankIban" dir="ltr" />
               </label>
             </div>
           </section>
@@ -390,6 +422,10 @@ const form = reactive({
   qiEnabled: true,
   superQiEnabled: true,
   alqasehEnabled: true,
+  bankName: '',
+  bankAccountHolder: '',
+  bankAccountNumber: '',
+  bankIban: '',
   ownerFullName: '',
   ownerFullNameAr: '',
   ownerEmail: '',
@@ -490,6 +526,10 @@ function fillForm(d) {
   form.qiEnabled = !!d.qiEnabled
   form.superQiEnabled = !!d.superQiEnabled
   form.alqasehEnabled = !!d.alqasehEnabled
+  form.bankName = d.bankName || ''
+  form.bankAccountHolder = d.bankAccountHolder || ''
+  form.bankAccountNumber = d.bankAccountNumber || ''
+  form.bankIban = d.bankIban || ''
   form.ownerFullName = owner?.fullName || ''
   form.ownerFullNameAr = owner?.fullNameAr || ''
   form.ownerEmail = owner?.email || ''
@@ -550,6 +590,10 @@ async function save() {
       qiEnabled: form.qiEnabled,
       superQiEnabled: form.superQiEnabled,
       alqasehEnabled: form.alqasehEnabled,
+      bankName: form.bankName || null,
+      bankAccountHolder: form.bankAccountHolder || null,
+      bankAccountNumber: form.bankAccountNumber || null,
+      bankIban: form.bankIban || null,
       ownerFullName: form.ownerFullName || null,
       ownerFullNameAr: form.ownerFullNameAr || null,
       ownerEmail: form.ownerEmail || null,

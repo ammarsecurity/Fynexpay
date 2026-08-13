@@ -20,6 +20,10 @@ public record AuthPolicyDto(bool RequireWhatsAppOtp, bool WhatsAppEnabled, bool 
 
 public record LoginRequest(string Email, string Password);
 
+public record ForgotPasswordRequest(string Phone);
+
+public record ResetPasswordRequest(Guid ChallengeId, string Code, string NewPassword);
+
 public record AuthResponse(
     string Token,
     Guid UserId,
@@ -48,7 +52,25 @@ public record UserProfileDto(
     string? KycAdminNotes = null,
     DateTime? KycSubmittedAtUtc = null,
     DateTime? KycReviewedAtUtc = null,
-    bool KycCanUpload = true);
+    bool KycCanUpload = true,
+    string? BankName = null,
+    string? BankAccountHolder = null,
+    string? BankAccountNumber = null,
+    string? BankIban = null,
+    bool HasPayoutAccount = false);
+
+public record MerchantPayoutAccountDto(
+    string? BankName,
+    string? BankAccountHolder,
+    string? BankAccountNumber,
+    string? BankIban,
+    bool IsComplete);
+
+public record UpdateMerchantPayoutAccountRequest(
+    string BankName,
+    string BankAccountHolder,
+    string BankAccountNumber,
+    string? BankIban);
 
 public record MerchantKycDto(
     string Status,
@@ -199,7 +221,7 @@ public record LedgerEntryDto(
     Guid? PaymentId,
     Guid? PayoutRequestId);
 
-public record CreatePayoutRequest(decimal Amount, string DestinationType, string DestinationDetails);
+public record CreatePayoutRequest(decimal Amount, string? DestinationType = null, string? DestinationDetails = null);
 
 public record PayoutDto(
     Guid Id,
@@ -211,7 +233,9 @@ public record PayoutDto(
     string? AdminNote,
     DateTime CreatedAtUtc,
     DateTime? ReviewedAtUtc,
-    DateTime? CompletedAtUtc);
+    DateTime? CompletedAtUtc,
+    Guid? MerchantId = null,
+    string? MerchantName = null);
 
 public record ApiKeyDto(
     Guid Id,
@@ -340,7 +364,11 @@ public record MerchantDetailDto(
     string? KycPassportUrl = null,
     string? KycAdminNotes = null,
     DateTime? KycSubmittedAtUtc = null,
-    DateTime? KycReviewedAtUtc = null);
+    DateTime? KycReviewedAtUtc = null,
+    string? BankName = null,
+    string? BankAccountHolder = null,
+    string? BankAccountNumber = null,
+    string? BankIban = null);
 
 public record UpdateMerchantAdminRequest(
     string? Status,
@@ -365,7 +393,11 @@ public record UpdateMerchantAdminRequest(
     string? OwnerFullNameAr,
     string? OwnerEmail,
     string? OwnerPhone,
-    string? NewPassword);
+    string? NewPassword,
+    string? BankName = null,
+    string? BankAccountHolder = null,
+    string? BankAccountNumber = null,
+    string? BankIban = null);
 public record ReviewPayoutRequest(string Action, string? AdminNote);
 
 public record NamedCountDto(string Key, int Count, decimal Amount = 0);

@@ -161,6 +161,11 @@
                   <label>{{ $t('ultramsg.countryCode') }}</label>
                   <input v-model="settings.defaultCountryCode" class="ltr" placeholder="964" />
                 </div>
+                <div class="field">
+                  <label>{{ $t('ultramsg.adminAlertPhone') }}</label>
+                  <input v-model="settings.adminAlertPhone" class="ltr" placeholder="07xxxxxxxxx" />
+                  <small class="muted">{{ $t('ultramsg.adminAlertHint') }}</small>
+                </div>
               </div>
             </article>
 
@@ -178,6 +183,10 @@
               <div class="field">
                 <label>{{ $t('ultramsg.checkoutMsg') }}</label>
                 <textarea v-model="settings.checkoutMessage" rows="3"></textarea>
+              </div>
+              <div class="field">
+                <label>{{ $t('ultramsg.resetMsg') }}</label>
+                <textarea v-model="settings.passwordResetMessage" rows="3"></textarea>
               </div>
             </article>
 

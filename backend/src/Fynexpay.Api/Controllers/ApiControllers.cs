@@ -67,6 +67,25 @@ public class AuthController : ControllerBase
         catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
         catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
     }
+
+    [HttpPost("forgot-password/send-otp")]
+    [AllowAnonymous]
+    public async Task<ActionResult<OtpSendResultDto>> SendForgotPasswordOtp([FromBody] ForgotPasswordRequest request, CancellationToken ct)
+    {
+        try { return Ok(await _auth.SendForgotPasswordOtpAsync(request, ct)); }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
+    [HttpPost("forgot-password/reset")]
+    [AllowAnonymous]
+    public async Task<ActionResult<AuthResponse>> ResetPassword([FromBody] ResetPasswordRequest request, CancellationToken ct)
+    {
+        try { return Ok(await _auth.ResetPasswordAsync(request, ct)); }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+    }
 }
 
 [ApiController]
@@ -128,6 +147,21 @@ public class MerchantDashboardController : ControllerBase
     public async Task<ActionResult<OtpSendResultDto>> RequestProfileOtp([FromBody] UpdateMerchantProfileRequest request, CancellationToken ct)
     {
         try { return Ok(await _profiles.RequestMerchantChangeAsync(UserId, request, ct)); }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+    }
+
+    [HttpGet("payout-account")]
+    public async Task<ActionResult<MerchantPayoutAccountDto>> PayoutAccount(CancellationToken ct)
+        => Ok(await _profiles.GetPayoutAccountAsync(UserId, ct));
+
+    [HttpPut("payout-account")]
+    public async Task<ActionResult<MerchantPayoutAccountDto>> UpdatePayoutAccount(
+        [FromBody] UpdateMerchantPayoutAccountRequest request,
+        CancellationToken ct)
+    {
+        try { return Ok(await _profiles.UpdatePayoutAccountAsync(UserId, request, ct)); }
         catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
@@ -730,7 +764,7 @@ public class AdminController : ControllerBase
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 5, 100);
-        var query = _db.PayoutRequests.AsQueryable();
+        var query = _db.PayoutRequests.Include(p => p.Merchant).AsQueryable();
         if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<PayoutStatus>(status, true, out var st))
             query = query.Where(p => p.Status == st);
         if (from.HasValue) query = query.Where(p => p.CreatedAtUtc >= from.Value.ToUniversalTime());
@@ -741,15 +775,15 @@ public class AdminController : ControllerBase
             query = query.Where(p =>
                 p.DestinationDetails.Contains(term) ||
                 p.DestinationType.Contains(term) ||
-                p.Id.ToString().Contains(term));
+                p.Id.ToString().Contains(term) ||
+                p.Merchant.BusinessName.Contains(term) ||
+                (p.Merchant.BusinessNameAr != null && p.Merchant.BusinessNameAr.Contains(term)));
         }
 
         var total = await query.CountAsync(ct);
         var list = await query.OrderByDescending(p => p.CreatedAtUtc)
             .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
-        var items = list.Select(p => new PayoutDto(
-            p.Id, p.Amount, p.Currency, p.Status.ToString(), p.DestinationType, p.DestinationDetails,
-            p.AdminNote, p.CreatedAtUtc, p.ReviewedAtUtc, p.CompletedAtUtc)).ToList();
+        var items = list.Select(p => PayoutService.Map(p, p.Merchant)).ToList();
         return Ok(new PagedResult<PayoutDto>(items, total, page, pageSize));
     }
 

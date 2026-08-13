@@ -101,6 +101,7 @@ public class NotificationService
             if (admins.Count == 0) return;
 
             await DeliverToUsersAsync(admins, type, title, body, linkUrl, merchantId, payload, s, ct);
+            await SendAdminAlertPhoneAsync(type, title, body, s, ct);
         }
         catch (Exception ex)
         {
@@ -227,6 +228,37 @@ public class NotificationService
 
         if (created.Count > 0)
             await _db.SaveChangesAsync(ct);
+    }
+
+    private async Task SendAdminAlertPhoneAsync(
+        string type,
+        string title,
+        string body,
+        NotificationSettings settings,
+        CancellationToken ct)
+    {
+        var ultra = await _ultramsgSettings.GetAsync(ct);
+        if (string.IsNullOrWhiteSpace(ultra.AdminAlertPhone))
+            return;
+        if (!ultra.WhatsAppEnabled || string.IsNullOrWhiteSpace(ultra.InstanceId) || string.IsNullOrWhiteSpace(ultra.Token))
+            return;
+
+        // Payout alerts always go to the ops WhatsApp when configured.
+        // Other admin events follow the WhatsApp notification toggle.
+        if (type != NotificationTypes.PayoutRequested && !settings.WhatsAppEnabled)
+            return;
+
+        var phone = NormalizePhone(ultra.AdminAlertPhone, ultra.DefaultCountryCode);
+        if (string.IsNullOrWhiteSpace(phone)) return;
+
+        try
+        {
+            await _ultramsg.SendChatAsync(phone, $"*{title}*\n{body}", ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Admin alert WhatsApp failed for {Type}", type);
+        }
     }
 
     private static bool IsEventEnabled(NotificationSettings s, string type) => type switch

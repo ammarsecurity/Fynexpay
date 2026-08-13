@@ -105,6 +105,9 @@ public class UltramsgSettingsService : IUltramsgSettingsService
         s.DefaultCountryCode = string.IsNullOrWhiteSpace(s.DefaultCountryCode)
             ? "964"
             : s.DefaultCountryCode.Trim().TrimStart('+');
+        s.AdminAlertPhone = string.IsNullOrWhiteSpace(s.AdminAlertPhone)
+            ? null
+            : s.AdminAlertPhone.Trim();
         s.SmtpHost = (s.SmtpHost ?? "").Trim();
         s.SmtpUsername = (s.SmtpUsername ?? "").Trim();
         s.SmtpPassword = (s.SmtpPassword ?? "").Trim();
@@ -118,6 +121,8 @@ public class UltramsgSettingsService : IUltramsgSettingsService
             s.CheckoutMessage = "رمز تأكيد الدفع عبر Fynexpay: {code}\nصالح لمدة 5 دقائق.";
         if (string.IsNullOrWhiteSpace(s.ProfileChangeMessage))
             s.ProfileChangeMessage = "رمز تأكيد تعديل الملف الشخصي في Fynexpay: {code}\nصالح لمدة 5 دقائق. لا تشاركه مع أحد.";
+        if (string.IsNullOrWhiteSpace(s.PasswordResetMessage))
+            s.PasswordResetMessage = "رمز استعادة كلمة المرور في Fynexpay: {code}\nصالح لمدة 5 دقائق. لا تشاركه مع أحد.";
         if (string.IsNullOrWhiteSpace(s.EmailRegisterSubject))
             s.EmailRegisterSubject = "رمز التحقق — Fynexpay";
         if (string.IsNullOrWhiteSpace(s.EmailCheckoutSubject))
@@ -138,9 +143,11 @@ public class UltramsgSettingsService : IUltramsgSettingsService
         InstanceId = s.InstanceId,
         Token = s.Token,
         DefaultCountryCode = s.DefaultCountryCode,
+        AdminAlertPhone = s.AdminAlertPhone,
         MerchantRegisterMessage = s.MerchantRegisterMessage,
         CheckoutMessage = s.CheckoutMessage,
         ProfileChangeMessage = s.ProfileChangeMessage,
+        PasswordResetMessage = s.PasswordResetMessage,
         EmailEnabled = s.EmailEnabled,
         SmtpHost = s.SmtpHost,
         SmtpPort = s.SmtpPort,

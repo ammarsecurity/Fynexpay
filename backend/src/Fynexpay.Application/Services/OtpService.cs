@@ -316,6 +316,104 @@ public class OtpService
             ?? throw new InvalidOperationException("بيانات التعديل غير مكتملة");
     }
 
+    public async Task<OtpSendResult> SendPasswordResetOtpAsync(string phoneRaw, CancellationToken ct = default)
+    {
+        var settings = await _settings.GetAsync(ct);
+        EnsureWhatsAppForPasswordReset(settings);
+
+        var phone = NormalizePhone(phoneRaw, settings.DefaultCountryCode);
+        var user = await FindUserByPhoneAsync(phone, settings.DefaultCountryCode, ct)
+            ?? throw new InvalidOperationException("رقم الهاتف غير مرتبط بحساب");
+
+        if (!user.IsActive)
+            throw new InvalidOperationException("الحساب غير نشط");
+        if (user.Merchant is { Status: MerchantStatus.Suspended or MerchantStatus.Rejected })
+            throw new InvalidOperationException("حساب التاجر موقوف أو مرفوض");
+
+        await EnforceSendCooldownAsync(OtpPurpose.PasswordReset, phone, null, ct);
+
+        var payload = JsonSerializer.Serialize(new PendingPasswordReset(user.Id, phone), JsonOpts);
+        var code = GenerateCode();
+        var challenge = new OtpChallenge
+        {
+            Purpose = OtpPurpose.PasswordReset,
+            PhoneE164 = phone,
+            TargetEmail = user.Email,
+            CodeHash = HashCode(code),
+            ExpiresAtUtc = DateTime.UtcNow.AddMinutes(5),
+            LastSentAtUtc = DateTime.UtcNow,
+            PayloadJson = payload
+        };
+        _db.OtpChallenges.Add(challenge);
+        await _db.SaveChangesAsync(ct);
+
+        var template = string.IsNullOrWhiteSpace(settings.PasswordResetMessage)
+            ? "رمز استعادة كلمة المرور في Fynexpay: {code}\nصالح لمدة 5 دقائق. لا تشاركه مع أحد."
+            : settings.PasswordResetMessage;
+        var via = await DeliverWhatsAppAsync(settings, phone, code, template, ct);
+        return new OtpSendResult(challenge.Id, MaskPhone(phone), 300, DevCode(code), via);
+    }
+
+    public async Task<PendingPasswordReset> ConsumePasswordResetChallengeAsync(
+        Guid challengeId,
+        string code,
+        CancellationToken ct = default)
+    {
+        var challenge = await LoadActiveChallengeAsync(challengeId, OtpPurpose.PasswordReset, ct);
+        await VerifyCodeAsync(challenge, code, ct);
+        challenge.Consumed = true;
+        await _db.SaveChangesAsync(ct);
+
+        if (string.IsNullOrWhiteSpace(challenge.PayloadJson))
+            throw new InvalidOperationException("بيانات الاستعادة غير مكتملة");
+
+        return JsonSerializer.Deserialize<PendingPasswordReset>(challenge.PayloadJson, JsonOpts)
+            ?? throw new InvalidOperationException("بيانات الاستعادة غير مكتملة");
+    }
+
+    private async Task<User?> FindUserByPhoneAsync(string phoneE164, string defaultCountryCode, CancellationToken ct)
+    {
+        var digits = phoneE164.TrimStart('+');
+        var last9 = digits.Length >= 9 ? digits[^9..] : digits;
+        var candidates = await _db.Users
+            .Include(u => u.Merchant)
+            .Where(u =>
+                (u.Phone != null && u.Phone.Contains(last9)) ||
+                (u.Merchant != null && u.Merchant.ContactPhone != null && u.Merchant.ContactPhone.Contains(last9)))
+            .OrderByDescending(u => u.CreatedAtUtc)
+            .ToListAsync(ct);
+
+        return candidates.FirstOrDefault(u =>
+            PhonesMatch(u.Phone, phoneE164, defaultCountryCode) ||
+            PhonesMatch(u.Merchant?.ContactPhone, phoneE164, defaultCountryCode));
+    }
+
+    private bool PhonesMatch(string? stored, string expectedE164, string defaultCountryCode)
+    {
+        if (string.IsNullOrWhiteSpace(stored)) return false;
+        try
+        {
+            return string.Equals(
+                NormalizePhone(stored, defaultCountryCode),
+                expectedE164,
+                StringComparison.Ordinal);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void EnsureWhatsAppForPasswordReset(UltramsgSettings settings)
+    {
+        if (!settings.Enabled)
+            throw new InvalidOperationException("خدمة التحقق غير مفعّلة حالياً");
+        if (!settings.UsesWhatsApp())
+            throw new InvalidOperationException("استعادة كلمة المرور تتطلب واتساب. فعّل قناة واتساب من إعدادات التحقق.");
+        if (string.IsNullOrWhiteSpace(settings.InstanceId) || string.IsNullOrWhiteSpace(settings.Token))
+            throw new InvalidOperationException("إعدادات Ultramsg غير مكتملة");
+    }
+
     private async Task<string> DeliverWhatsAppAsync(
         UltramsgSettings settings,
         string phone,
@@ -528,6 +626,8 @@ public record PendingMerchantRegistration(
     string? BusinessNameAr,
     string ContactPhone,
     string? WebsiteUrl);
+
+public record PendingPasswordReset(Guid UserId, string Phone);
 
 public record PendingProfileChange(
     Guid UserId,

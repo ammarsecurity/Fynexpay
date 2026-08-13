@@ -20,6 +20,9 @@
             <label>{{ t('password') }}</label>
             <input v-model="password" type="password" autocomplete="current-password" placeholder="••••••••" required />
           </div>
+          <div class="forgot-row">
+            <RouterLink to="/forgot" class="forgot-link">{{ t('forgotPassword') }}</RouterLink>
+          </div>
           <button class="btn primary submit" type="submit" :disabled="loading">
             {{ loading ? t('signingIn') : t('signIn') }}
           </button>

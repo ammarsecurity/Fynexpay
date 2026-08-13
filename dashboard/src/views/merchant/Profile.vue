@@ -81,6 +81,41 @@
     <div class="card kyc-card">
       <div class="kyc-head">
         <div>
+          <h2>{{ $t('profile.bankTitle') }}</h2>
+          <p class="muted">{{ $t('profile.bankSub') }}</p>
+        </div>
+        <span class="badge" :class="bank.isComplete ? 'ok' : 'warn'">
+          {{ bank.isComplete ? $t('profile.bankReady') : $t('profile.bankMissing') }}
+        </span>
+      </div>
+      <form class="profile-form bank-form" @submit.prevent="saveBank">
+        <label class="field">
+          <span>{{ $t('profile.bankName') }}</span>
+          <input v-model="bank.bankName" required :placeholder="$t('profile.bankNamePh')" />
+        </label>
+        <label class="field">
+          <span>{{ $t('profile.bankHolder') }}</span>
+          <input v-model="bank.bankAccountHolder" required :placeholder="$t('profile.bankHolderPh')" />
+        </label>
+        <label class="field">
+          <span>{{ $t('profile.bankNumber') }}</span>
+          <input v-model="bank.bankAccountNumber" required dir="ltr" :placeholder="$t('profile.bankNumberPh')" />
+        </label>
+        <label class="field">
+          <span>{{ $t('profile.bankIban') }}</span>
+          <input v-model="bank.bankIban" dir="ltr" :placeholder="$t('profile.bankIbanPh')" />
+        </label>
+        <p v-if="bankError" class="error">{{ bankError }}</p>
+        <p v-if="bankOk" class="ok-msg">{{ bankOk }}</p>
+        <button class="btn" type="submit" :disabled="bankSaving">
+          {{ bankSaving ? $t('common.loading') : $t('profile.bankSave') }}
+        </button>
+      </form>
+    </div>
+
+    <div class="card kyc-card">
+      <div class="kyc-head">
+        <div>
           <h2>{{ $t('profile.kycTitle') }}</h2>
           <p class="muted">{{ $t('profile.kycSub') }}</p>
         </div>
@@ -160,6 +195,16 @@ const error = ref('')
 const ok = ref('')
 const kycError = ref('')
 const kycOk = ref('')
+const bank = reactive({
+  bankName: '',
+  bankAccountHolder: '',
+  bankAccountNumber: '',
+  bankIban: '',
+  isComplete: false
+})
+const bankSaving = ref(false)
+const bankError = ref('')
+const bankOk = ref('')
 
 const docs = computed(() => [
   { key: 'id-front', label: t('profile.kycIdFront'), url: kyc.idFrontUrl },
@@ -205,6 +250,11 @@ async function load() {
     form.businessName = profile.businessName || ''
     form.businessNameAr = profile.businessNameAr || ''
     form.websiteUrl = profile.websiteUrl || ''
+    bank.bankName = profile.bankName || ''
+    bank.bankAccountHolder = profile.bankAccountHolder || ''
+    bank.bankAccountNumber = profile.bankAccountNumber || ''
+    bank.bankIban = profile.bankIban || ''
+    bank.isComplete = !!profile.hasPayoutAccount
     applyKyc(kycData)
   } catch (e) {
     error.value = e.response?.data?.message || t('profile.loadFail')
@@ -263,6 +313,30 @@ async function confirmOtp() {
   }
 }
 
+async function saveBank() {
+  bankError.value = ''
+  bankOk.value = ''
+  bankSaving.value = true
+  try {
+    const { data } = await api.put('/api/merchant/payout-account', {
+      bankName: bank.bankName,
+      bankAccountHolder: bank.bankAccountHolder,
+      bankAccountNumber: bank.bankAccountNumber,
+      bankIban: bank.bankIban || null
+    })
+    bank.bankName = data.bankName || ''
+    bank.bankAccountHolder = data.bankAccountHolder || ''
+    bank.bankAccountNumber = data.bankAccountNumber || ''
+    bank.bankIban = data.bankIban || ''
+    bank.isComplete = !!data.isComplete
+    bankOk.value = t('profile.bankSaved')
+  } catch (e) {
+    bankError.value = e.response?.data?.message || t('profile.bankSaveFail')
+  } finally {
+    bankSaving.value = false
+  }
+}
+
 async function onPick(docType, event) {
   const file = event.target.files?.[0]
   event.target.value = ''
@@ -305,6 +379,7 @@ onMounted(load)
   gap: 14px;
   max-width: 460px;
 }
+.bank-form { max-width: 560px; }
 .field { display: grid; gap: 6px; }
 .field span { font-size: 0.85rem; color: var(--muted, #64748b); }
 .field input {
