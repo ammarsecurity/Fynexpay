@@ -1,25 +1,29 @@
 <template>
   <SiteNav />
 
-  <main class="legal-page" v-if="page">
-    <aside class="legal-toc" v-if="page.sections?.length">
-      <p class="toc-title">{{ page.tocTitle }}</p>
-      <a v-for="(s, i) in page.sections" :key="i" :href="'#' + slug(s.heading, i)">{{ s.heading }}</a>
-    </aside>
-
-    <article class="legal-article">
+  <main class="page-shell legal-shell" v-if="page">
+    <div class="page-hero legal-hero">
       <p class="legal-kicker">{{ page.updated }}</p>
       <h1>{{ page.title }}</h1>
-      <p class="lead" v-if="page.intro">{{ page.intro }}</p>
+      <p v-if="page.intro">{{ page.intro }}</p>
+    </div>
 
-      <section v-for="(s, i) in page.sections" :key="i" :id="slug(s.heading, i)">
-        <h2>{{ s.heading }}</h2>
-        <p v-for="(para, pi) in paras(s.body)" :key="pi">{{ para }}</p>
-        <ul v-if="s.items?.length">
-          <li v-for="(item, ii) in s.items" :key="ii">{{ item }}</li>
-        </ul>
-      </section>
-    </article>
+    <div class="legal-page">
+      <aside class="legal-toc" v-if="page.sections?.length">
+        <p class="toc-title">{{ page.tocTitle }}</p>
+        <a v-for="(s, i) in page.sections" :key="i" :href="'#' + slug(s.heading, i)">{{ s.heading }}</a>
+      </aside>
+
+      <article class="legal-article">
+        <section v-for="(s, i) in page.sections" :key="i" :id="slug(s.heading, i)">
+          <h2>{{ s.heading }}</h2>
+          <p v-for="(para, pi) in paras(s.body)" :key="pi">{{ para }}</p>
+          <ul v-if="s.items?.length">
+            <li v-for="(item, ii) in s.items" :key="ii">{{ item }}</li>
+          </ul>
+        </section>
+      </article>
+    </div>
   </main>
 
   <SiteFooter />

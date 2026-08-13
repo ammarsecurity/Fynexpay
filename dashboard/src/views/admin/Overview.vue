@@ -24,6 +24,7 @@
         </div>
         <span class="period-chip">{{ $t('adminOverview.period14') }}</span>
         <button class="btn secondary" type="button" :disabled="loading" @click="load">
+          <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
           {{ loading ? $t('common.loading') : $t('common.refresh') }}
         </button>
       </div>
@@ -35,7 +36,7 @@
 
     <div class="grid" v-if="stats">
       <div class="stat">
-        <div class="ico purple">د</div>
+        <div class="ico purple"><i class="bi bi-cash-stack" aria-hidden="true"></i></div>
         <div class="label">{{ $t('adminOverview.volume') }}</div>
         <div class="value">{{ money(stats.grossVolume) }}</div>
         <div class="trend" :class="{ down: volumeDelta < 0 }">
@@ -43,13 +44,13 @@
         </div>
       </div>
       <div class="stat">
-        <div class="ico rose">%</div>
+        <div class="ico rose"><i class="bi bi-percent" aria-hidden="true"></i></div>
         <div class="label">{{ $t('adminOverview.fees') }}</div>
         <div class="value">{{ money(stats.platformFees) }}</div>
         <div class="trend">{{ $t('adminOverview.netMerchants') }}: {{ money(stats.netToMerchants) }}</div>
       </div>
       <div class="stat">
-        <div class="ico green">+</div>
+        <div class="ico green"><i class="bi bi-people" aria-hidden="true"></i></div>
         <div class="label">{{ $t('adminOverview.activeMerchants') }}</div>
         <div class="value">{{ num(stats.activeMerchants) }}</div>
         <div class="trend">
@@ -58,7 +59,7 @@
         </div>
       </div>
       <div class="stat">
-        <div class="ico sky">#</div>
+        <div class="ico sky"><i class="bi bi-receipt" aria-hidden="true"></i></div>
         <div class="label">{{ $t('adminOverview.paymentsCount') }}</div>
         <div class="value">{{ num(stats.paymentsCount) }}</div>
         <div class="trend">

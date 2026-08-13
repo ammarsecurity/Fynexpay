@@ -60,6 +60,8 @@ public sealed class MerchantApiExamplesFilter : ISchemaFilter, IOperationFilter
             return;
 
         var path = context.ApiDescription.RelativePath ?? "";
+        ApplySecurity(operation, path);
+
         if (path.StartsWith("v1/payments", StringComparison.OrdinalIgnoreCase)
             && string.Equals(context.ApiDescription.HttpMethod, "POST", StringComparison.OrdinalIgnoreCase)
             && !path.Contains("cancel", StringComparison.OrdinalIgnoreCase))
@@ -67,7 +69,7 @@ public sealed class MerchantApiExamplesFilter : ISchemaFilter, IOperationFilter
             operation.Summary = "إنشاء دفعة";
             operation.Description =
                 "أنشئ دفعة مربوطة بمنصة مفتاح الـ API. أعد توجيه الزبون إلى checkoutUrl ليختار المزود.\n\n" +
-                "Headers المطلوبة: `X-Api-Key`, `Content-Type: application/json`.\n" +
+                "Headers المطلوبة: `Authorization: Bearer fx_merch_...`, `X-Api-Key`, `Content-Type: application/json`.\n" +
                 "موصى به: `X-Idempotency-Key`, و`Origin` عند الاستدعاء من المتصفح (يجب أن يطابق دومين المنصة).";
 
             operation.Parameters ??= new List<OpenApiParameter>();
@@ -78,23 +80,43 @@ public sealed class MerchantApiExamplesFilter : ISchemaFilter, IOperationFilter
                  && string.Equals(context.ApiDescription.HttpMethod, "GET", StringComparison.OrdinalIgnoreCase))
         {
             operation.Summary = "حالة الدفعة";
-            operation.Description = "استعلام حالة دفعة بالمعرّف. استخدم نفس X-Api-Key الخاص بالمنصة.";
+            operation.Description = "استعلام حالة دفعة بالمعرّف. يتطلب Bearer التاجر و X-Api-Key للمنصة.";
         }
         else if (path.Contains("cancel", StringComparison.OrdinalIgnoreCase))
         {
             operation.Summary = "إلغاء دفعة";
-            operation.Description = "إلغاء دفعة ما زالت Pending.";
+            operation.Description = "إلغاء دفعة ما زالت Pending. يتطلب Bearer التاجر و X-Api-Key للمنصة.";
         }
         else if (path.StartsWith("v1/wallet", StringComparison.OrdinalIgnoreCase))
         {
             operation.Summary = "المحفظة";
-            operation.Description = "رصيد التاجر والصافي المتاح للسحب.";
+            operation.Description = "رصيد التاجر والصافي المتاح للسحب. يتطلب `Authorization: Bearer fx_merch_...` فقط.";
         }
         else if (path.StartsWith("v1/payouts", StringComparison.OrdinalIgnoreCase))
         {
             operation.Summary = "طلب سحب";
-            operation.Description = "إنشاء طلب سحب من الرصيد المتاح.";
+            operation.Description = "إنشاء طلب سحب من الرصيد المتاح. يتطلب `Authorization: Bearer fx_merch_...` فقط.";
         }
+    }
+
+    private static void ApplySecurity(OpenApiOperation operation, string path)
+    {
+        var bearer = new OpenApiSecurityScheme
+        {
+            Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+        };
+        var requirement = new OpenApiSecurityRequirement { [bearer] = Array.Empty<string>() };
+
+        if (path.StartsWith("v1/payments", StringComparison.OrdinalIgnoreCase))
+        {
+            var apiKey = new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "ApiKey" }
+            };
+            requirement[apiKey] = Array.Empty<string>();
+        }
+
+        operation.Security = new List<OpenApiSecurityRequirement> { requirement };
     }
 
     private static void EnsureHeader(OpenApiOperation operation, string name, string description, string example)

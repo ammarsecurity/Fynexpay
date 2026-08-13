@@ -161,6 +161,43 @@ public class AuthService
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken ct = default)
     {
+        var s = await _ultramsgSettings.GetAsync(ct);
+        if (LoginOtpRequired(s))
+            throw new InvalidOperationException("يجب تأكيد رمز التحقق أولاً عبر /api/auth/login/send-otp ثم verify");
+
+        var user = await AuthenticateForLoginAsync(request, ct);
+        return IssueAuth(user);
+    }
+
+    public async Task<OtpSendResultDto> SendLoginOtpAsync(LoginRequest request, CancellationToken ct = default)
+    {
+        var s = await _ultramsgSettings.GetAsync(ct);
+        if (!LoginOtpRequired(s))
+            throw new InvalidOperationException("تأكيد OTP لتسجيل الدخول غير مطلوب حالياً");
+
+        var user = await AuthenticateForLoginAsync(request, ct);
+        var result = await _otp.SendLoginOtpAsync(user, ct);
+        return new OtpSendResultDto(result.ChallengeId, result.MaskedDestination, result.ExpiresInSeconds, result.DevCode, result.Via);
+    }
+
+    public async Task<AuthResponse> VerifyLoginOtpAsync(VerifyLoginOtpRequest request, CancellationToken ct = default)
+    {
+        var pending = await _otp.ConsumeLoginChallengeAsync(request.ChallengeId, request.Code, ct);
+        var user = await _db.Users.Include(u => u.Merchant)
+            .FirstOrDefaultAsync(u => u.Id == pending.UserId, ct)
+            ?? throw new InvalidOperationException("المستخدم غير موجود");
+
+        if (!user.IsActive)
+            throw new InvalidOperationException("الحساب غير نشط");
+        if (user.Merchant is { Status: MerchantStatus.Suspended or MerchantStatus.Rejected })
+            throw new UnauthorizedAccessException("حساب التاجر موقوف أو مرفوض");
+
+        await _otp.InvalidateChallengeAsync(request.ChallengeId, ct);
+        return IssueAuth(user);
+    }
+
+    private async Task<User> AuthenticateForLoginAsync(LoginRequest request, CancellationToken ct)
+    {
         PasswordRules.ValidateEmail(request.Email);
         var user = await _db.Users.Include(u => u.Merchant)
             .FirstOrDefaultAsync(u => u.Email == request.Email.Trim().ToLowerInvariant(), ct)
@@ -172,9 +209,17 @@ public class AuthService
         if (user.Merchant is { Status: MerchantStatus.Suspended or MerchantStatus.Rejected })
             throw new UnauthorizedAccessException("حساب التاجر موقوف أو مرفوض");
 
+        return user;
+    }
+
+    private AuthResponse IssueAuth(User user)
+    {
         var token = _jwt.CreateToken(user.Id, user.Email, user.Role.ToString(), user.MerchantId, user.FullName);
         return new AuthResponse(token, user.Id, user.Email, user.FullName, user.Role.ToString(), user.MerchantId, user.Merchant?.Status.ToString());
     }
+
+    private static bool LoginOtpRequired(UltramsgSettings s)
+        => s.Enabled && s.RequireMerchantRegisterOtp && (s.UsesWhatsApp() || s.UsesEmail());
 
     public async Task<OtpSendResultDto> SendForgotPasswordOtpAsync(ForgotPasswordRequest request, CancellationToken ct = default)
     {
@@ -1537,10 +1582,78 @@ public class MerchantAdminService
     {
         var key = await _db.ApiKeys.FirstOrDefaultAsync(k => k.Id == keyId && k.MerchantId == merchantId, ct)
             ?? throw new InvalidOperationException("المفتاح غير موجود");
+        if (IsMerchantBearer(key))
+            throw new InvalidOperationException("مفتاح التاجر يُعاد توليده من صفحة المفاتيح، ولا يُلغى من مفاتيح المنصات");
         key.IsActive = false;
         key.UpdatedAtUtc = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
     }
+
+    public async Task<MerchantBearerDto> GetMerchantBearerAsync(Guid merchantId, CancellationToken ct = default)
+    {
+        var key = await FindMerchantBearerAsync(merchantId, ct);
+        return new MerchantBearerDto(
+            key?.Id,
+            key?.KeyPrefix,
+            key?.IsActive == true,
+            key == null || !key.IsActive,
+            key?.CreatedAtUtc,
+            key?.LastUsedAtUtc);
+    }
+
+    public async Task<CreateApiKeyResponse> ClaimMerchantBearerAsync(Guid merchantId, CancellationToken ct = default)
+    {
+        var existing = await FindMerchantBearerAsync(merchantId, ct);
+        if (existing is { IsActive: true })
+            throw new InvalidOperationException("مفتاح التاجر مُستلم مسبقاً. استخدم إعادة التوليد إن ضاع منك.");
+        return await IssueMerchantBearerAsync(merchantId, ct);
+    }
+
+    public Task<CreateApiKeyResponse> RegenerateMerchantBearerAsync(Guid merchantId, CancellationToken ct = default)
+        => IssueMerchantBearerAsync(merchantId, ct);
+
+    private async Task<CreateApiKeyResponse> IssueMerchantBearerAsync(Guid merchantId, CancellationToken ct)
+    {
+        var merchant = await _db.Merchants.FirstOrDefaultAsync(m => m.Id == merchantId, ct)
+            ?? throw new InvalidOperationException("التاجر غير موجود");
+        if (merchant.Status != MerchantStatus.Active)
+            throw new InvalidOperationException("حساب التاجر غير مفعّل بعد");
+
+        var previous = await _db.ApiKeys
+            .Where(k => k.MerchantId == merchantId && k.MerchantPlatformId == null)
+            .Where(k => k.KeyPrefix.StartsWith("fx_merch_"))
+            .ToListAsync(ct);
+        foreach (var old in previous)
+        {
+            old.IsActive = false;
+            old.UpdatedAtUtc = DateTime.UtcNow;
+        }
+
+        var (plain, prefix, hash) = _apiKeys.GenerateMerchant();
+        var key = new ApiKey
+        {
+            MerchantId = merchantId,
+            MerchantPlatformId = null,
+            Name = "Merchant",
+            KeyPrefix = prefix,
+            KeyHash = hash,
+            IsActive = true,
+            IsTest = false
+        };
+        _db.ApiKeys.Add(key);
+        await _db.SaveChangesAsync(ct);
+        return new CreateApiKeyResponse(key.Id, key.Name, key.KeyPrefix, plain, key.CreatedAtUtc);
+    }
+
+    private Task<ApiKey?> FindMerchantBearerAsync(Guid merchantId, CancellationToken ct)
+        => _db.ApiKeys
+            .Where(k => k.MerchantId == merchantId && k.MerchantPlatformId == null && k.IsActive)
+            .Where(k => k.KeyPrefix.StartsWith("fx_merch_"))
+            .OrderByDescending(k => k.CreatedAtUtc)
+            .FirstOrDefaultAsync(ct);
+
+    private static bool IsMerchantBearer(ApiKey key)
+        => key.MerchantPlatformId == null && key.KeyPrefix.StartsWith("fx_merch_", StringComparison.OrdinalIgnoreCase);
 
     public async Task<MerchantDto> GetMerchantAsync(Guid merchantId, CancellationToken ct = default)
     {

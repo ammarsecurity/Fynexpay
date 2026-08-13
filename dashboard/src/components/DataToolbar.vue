@@ -35,8 +35,14 @@
       </div>
     </div>
     <div class="actions">
-      <button class="btn secondary" type="button" @click="emit('reset')">{{ $t('common.reset') }}</button>
-      <button class="btn" type="button" @click="emit('apply')">{{ $t('common.apply') }}</button>
+      <button class="btn secondary" type="button" @click="emit('reset')">
+        <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
+        {{ $t('common.reset') }}
+      </button>
+      <button class="btn" type="button" @click="emit('apply')">
+        <i class="bi bi-funnel" aria-hidden="true"></i>
+        {{ $t('common.apply') }}
+      </button>
     </div>
   </div>
 </template>

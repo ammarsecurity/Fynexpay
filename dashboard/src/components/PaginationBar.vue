@@ -11,9 +11,13 @@
       <select class="page-size" :value="pageSize" @change="onSize($event.target.value)">
         <option v-for="n in sizes" :key="n" :value="n">{{ n }} / {{ $t('common.page') }}</option>
       </select>
-      <button class="btn secondary" type="button" :disabled="page <= 1" @click="go(page - 1)">‹</button>
+      <button class="btn secondary icon-only" type="button" :disabled="page <= 1" :aria-label="$t('common.page')" @click="go(page - 1)">
+        <i class="bi bi-chevron-right" aria-hidden="true"></i>
+      </button>
       <span class="page-label">{{ $t('common.page') }} {{ page }} {{ $t('common.of') }} {{ pages }}</span>
-      <button class="btn secondary" type="button" :disabled="page >= pages" @click="go(page + 1)">›</button>
+      <button class="btn secondary icon-only" type="button" :disabled="page >= pages" :aria-label="$t('common.page')" @click="go(page + 1)">
+        <i class="bi bi-chevron-left" aria-hidden="true"></i>
+      </button>
     </div>
   </div>
 </template>
@@ -66,5 +70,9 @@ function onSize(v) {
   background: #fff;
 }
 .page-label { font-weight: 600; font-size: 0.9rem; color: var(--muted); }
-.controls .btn { padding: 8px 12px; min-width: 40px; justify-content: center; }
+.controls .btn { padding: 0; }
+:global(html[dir="ltr"]) .controls .bi {
+  display: inline-block;
+  transform: scaleX(-1);
+}
 </style>

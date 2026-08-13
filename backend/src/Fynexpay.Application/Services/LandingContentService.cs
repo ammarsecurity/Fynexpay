@@ -41,8 +41,11 @@ public class LandingContentService
                            || content.En?.Legal?.Terms?.Sections is not { Count: > 0 };
         var missingFooterNotes = string.IsNullOrWhiteSpace(content.Ar?.FooterDisclaimer)
                                  || string.IsNullOrWhiteSpace(content.En?.FooterDisclaimer);
+        var missingHeroAccent = string.IsNullOrWhiteSpace(content.Ar?.HeroAccent)
+                                || string.IsNullOrWhiteSpace(content.En?.HeroAccent);
         content = MergeWithDefaults(content);
-        if (missingLegal || missingFooterNotes || ScrubProviderBrandNames(content))
+        var refreshedHero = RefreshStaleHeroCopy(content);
+        if (missingLegal || missingFooterNotes || missingHeroAccent || refreshedHero || ScrubProviderBrandNames(content))
             await PersistAsync(content, ct);
         _cache = content;
         return Clone(content);
@@ -101,6 +104,9 @@ public class LandingContentService
         src.StartNow = Pick(src.StartNow, fallback.StartNow);
         src.Badge = Pick(src.Badge, fallback.Badge);
         src.HeroTitle = Pick(src.HeroTitle, fallback.HeroTitle);
+        src.HeroBefore = Pick(src.HeroBefore, fallback.HeroBefore);
+        src.HeroAccent = Pick(src.HeroAccent, fallback.HeroAccent);
+        src.HeroAfter = Pick(src.HeroAfter, fallback.HeroAfter);
         src.HeroSubtitle = Pick(src.HeroSubtitle, fallback.HeroSubtitle);
         src.CtaMerchant = Pick(src.CtaMerchant, fallback.CtaMerchant);
         src.CtaDocs = Pick(src.CtaDocs, fallback.CtaDocs);
@@ -209,6 +215,40 @@ public class LandingContentService
             Body = s.Body,
             Items = s.Items?.ToList() ?? []
         }).ToList();
+
+    /// <summary>
+    /// Replace known legacy hero/announce copy with the current marketing defaults.
+    /// </summary>
+    private static bool RefreshStaleHeroCopy(LandingContentDto content)
+    {
+        var defaults = LandingDefaults.Create();
+        var changed = false;
+        changed |= RefreshLocaleHero(content.Ar, defaults.Ar);
+        changed |= RefreshLocaleHero(content.En, defaults.En);
+        return changed;
+    }
+
+    private static bool RefreshLocaleHero(LandingLocaleDto src, LandingLocaleDto fallback)
+    {
+        var changed = false;
+        if (IsStaleBadge(src.Badge)) { src.Badge = fallback.Badge; changed = true; }
+        if (IsStaleCta(src.CtaMerchant)) { src.CtaMerchant = fallback.CtaMerchant; changed = true; }
+        if (string.IsNullOrWhiteSpace(src.HeroBefore)) { src.HeroBefore = fallback.HeroBefore; changed = true; }
+        if (string.IsNullOrWhiteSpace(src.HeroAccent)) { src.HeroAccent = fallback.HeroAccent; changed = true; }
+        if (string.IsNullOrWhiteSpace(src.HeroAfter)) { src.HeroAfter = fallback.HeroAfter; changed = true; }
+        return changed;
+    }
+
+    private static bool IsStaleBadge(string? badge) =>
+        !string.IsNullOrWhiteSpace(badge) && (
+            badge.Contains("صفحة دفع مستضافة", StringComparison.Ordinal)
+            || badge.Contains("Hosted checkout ready", StringComparison.OrdinalIgnoreCase)
+            || badge.Contains("جديد ·", StringComparison.Ordinal));
+
+    private static bool IsStaleCta(string? cta) =>
+        !string.IsNullOrWhiteSpace(cta) && (
+            cta.Contains("ابدأ كتاجر", StringComparison.Ordinal)
+            || cta.Contains("Start as merchant", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Strip hardcoded PSP brand names from marketing copy (logos are shown instead).

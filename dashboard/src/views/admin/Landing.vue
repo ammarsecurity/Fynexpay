@@ -32,6 +32,9 @@
         <div class="field"><label>{{ $t('landingCms.startNow') }}</label><input v-model="active.startNow" /></div>
         <div class="field"><label>{{ $t('landingCms.badge') }}</label><input v-model="active.badge" /></div>
         <div class="field full"><label>{{ $t('landingCms.heroTitle') }}</label><input v-model="active.heroTitle" /></div>
+        <div class="field"><label>{{ $t('landingCms.heroBefore') }}</label><input v-model="active.heroBefore" /></div>
+        <div class="field"><label>{{ $t('landingCms.heroAccent') }}</label><input v-model="active.heroAccent" /></div>
+        <div class="field full"><label>{{ $t('landingCms.heroAfter') }}</label><input v-model="active.heroAfter" /></div>
         <div class="field full"><label>{{ $t('landingCms.heroSubtitle') }}</label><textarea v-model="active.heroSubtitle" rows="3" /></div>
         <div class="field"><label>{{ $t('landingCms.ctaMerchant') }}</label><input v-model="active.ctaMerchant" /></div>
         <div class="field"><label>{{ $t('landingCms.ctaDocs') }}</label><input v-model="active.ctaDocs" /></div>

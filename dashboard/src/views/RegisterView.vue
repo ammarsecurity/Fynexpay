@@ -106,10 +106,6 @@
           {{ $t('auth.hasAccount') }}
           <RouterLink to="/login">{{ $t('auth.loginLink') }}</RouterLink>
         </p>
-        <p class="auth-secure-note">
-          <i class="bi bi-lock-fill" aria-hidden="true"></i>
-          {{ $t('auth.secureNote') }}
-        </p>
       </div>
     </section>
   </div>

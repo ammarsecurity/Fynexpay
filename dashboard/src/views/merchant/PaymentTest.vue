@@ -298,6 +298,7 @@ const curlCode = computed(() => {
   if (!selectedPlatform.value) return ''
   const escaped = bodyPretty.value.replace(/'/g, "'\\''")
   return `curl -X POST ${API_BASE}/v1/payments \\
+  -H "Authorization: Bearer YOUR_MERCHANT_BEARER" \\
   -H "X-Api-Key: ${apiKeyPlaceholder.value}" \\
   -H "Content-Type: application/json" \\
   -H "X-Idempotency-Key: ${idempotencyKey.value}" \\
@@ -310,6 +311,7 @@ const nodeCode = computed(() => {
   return `const res = await fetch("${API_BASE}/v1/payments", {
   method: "POST",
   headers: {
+    "Authorization": "Bearer YOUR_MERCHANT_BEARER",
     "X-Api-Key": "${apiKeyPlaceholder.value}",
     "Content-Type": "application/json",
     "X-Idempotency-Key": "${idempotencyKey.value}",
@@ -337,6 +339,7 @@ curl_setopt_array($ch, [
   CURLOPT_POST => true,
   CURLOPT_RETURNTRANSFER => true,
   CURLOPT_HTTPHEADER => [
+    'Authorization: Bearer YOUR_MERCHANT_BEARER',
     'X-Api-Key: ${apiKeyPlaceholder.value}',
     'Content-Type: application/json',
     'X-Idempotency-Key: ${idempotencyKey.value}',
@@ -354,12 +357,14 @@ $payment = json_decode($response, true);
 const statusCode = computed(() => {
   if (!selectedPlatform.value) return ''
   return `curl ${API_BASE}/v1/payments/${paymentIdSample.value} \\
+  -H "Authorization: Bearer YOUR_MERCHANT_BEARER" \\
   -H "X-Api-Key: ${apiKeyPlaceholder.value}" \\
   -H "Origin: ${origin.value}"
 
 # Node
 const statusRes = await fetch("${API_BASE}/v1/payments/${paymentIdSample.value}", {
   headers: {
+    "Authorization": "Bearer YOUR_MERCHANT_BEARER",
     "X-Api-Key": "${apiKeyPlaceholder.value}",
     "Origin": "${origin.value}"
   }

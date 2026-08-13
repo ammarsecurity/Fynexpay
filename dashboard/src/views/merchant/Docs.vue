@@ -93,6 +93,17 @@
       <p class="muted">{{ $t('docs.checkoutHint') }}</p>
     </section>
 
+    <section class="card">
+      <div class="section-head">
+        <div>
+          <h2>{{ $t('docs.walletTitle') }}</h2>
+          <p class="muted">{{ $t('docs.walletHint') }}</p>
+        </div>
+        <button class="btn secondary" type="button" @click="copy(walletExample, $t('docs.copied'))">{{ $t('docs.copy') }}</button>
+      </div>
+      <pre class="code mono" dir="ltr">{{ walletExample }}</pre>
+    </section>
+
     <div class="dash-grid">
       <section class="card">
         <div class="section-head">
@@ -179,6 +190,7 @@ const swaggerUrl = `${API_BASE}/swagger/index.html`
 const approvedPlatforms = computed(() => (platforms.value || []).filter(p => p.status === 'Approved'))
 const sampleDomain = computed(() => approvedPlatforms.value[0]?.domain || 'shop.example.com')
 const sampleKey = 'YOUR_PLATFORM_API_KEY'
+const sampleBearer = 'YOUR_MERCHANT_BEARER'
 
 const steps = computed(() => [
   { title: t('docs.step1Title'), text: t('docs.step1Body'), link: '/merchant', linkText: t('nav.overview') },
@@ -233,6 +245,7 @@ const createExample = computed(() => {
     ? `http://${sampleDomain.value}`
     : `https://${sampleDomain.value}`
   return `curl -X POST ${API_BASE}/v1/payments \\
+  -H "Authorization: Bearer ${sampleBearer}" \\
   -H "X-Api-Key: ${sampleKey}" \\
   -H "Content-Type: application/json" \\
   -H "X-Idempotency-Key: order-1001" \\
@@ -263,8 +276,17 @@ const createResponse = `{
 }`
 
 const statusExample = computed(() => `curl ${API_BASE}/v1/payments/PAYMENT_ID \\
+  -H "Authorization: Bearer ${sampleBearer}" \\
   -H "X-Api-Key: ${sampleKey}" \\
   -H "Origin: https://${sampleDomain.value}"`)
+
+const walletExample = computed(() => `curl ${API_BASE}/v1/wallet \\
+  -H "Authorization: Bearer ${sampleBearer}"
+
+curl -X POST ${API_BASE}/v1/payouts \\
+  -H "Authorization: Bearer ${sampleBearer}" \\
+  -H "Content-Type: application/json" \\
+  -d '{ "amount": 100000 }'`)
 
 const webhookExample = `{
   "id": "5bac8b83-....",

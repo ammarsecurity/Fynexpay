@@ -1,6 +1,11 @@
 <template>
   <div>
-    <h1>{{ $t('merchants.title') }}</h1>
+    <div class="page-head">
+      <div>
+        <h1>{{ $t('merchants.title') }}</h1>
+        <p class="sub">{{ $t('merchants.subtitle') }}</p>
+      </div>
+    </div>
 
     <DataToolbar
       v-model="filters"

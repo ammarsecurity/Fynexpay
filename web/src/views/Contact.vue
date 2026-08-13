@@ -1,32 +1,32 @@
 <template>
   <SiteNav />
 
-  <main class="contact-page" v-if="c">
-    <div class="contact-shell">
-      <aside class="contact-panel">
-        <span class="eyebrow">{{ c.contactEyebrow }}</span>
-        <h1>{{ c.contactTitle }}</h1>
-        <p>{{ c.contactSubtitle }}</p>
+  <main class="page-shell contact-page" v-if="c">
+    <div class="page-hero">
+      <span class="eyebrow">{{ c.contactEyebrow }}</span>
+      <h1>{{ c.contactTitle }}</h1>
+      <p>{{ c.contactSubtitle }}</p>
+    </div>
 
-        <ul class="contact-list">
-          <li>
-            <span class="label">{{ c.contactEmailLabel }}</span>
-            <a class="value ltr" :href="'mailto:' + c.contactEmail">{{ c.contactEmail }}</a>
-          </li>
-          <li>
-            <span class="label">{{ c.contactPhoneLabel }}</span>
-            <a class="value ltr" :href="'tel:' + c.contactPhone">{{ c.contactPhone }}</a>
-          </li>
-          <li>
-            <span class="label">{{ c.contactAddressLabel }}</span>
-            <strong class="value">{{ c.contactAddress }}</strong>
-          </li>
-          <li>
-            <span class="label">{{ c.contactHoursLabel }}</span>
-            <strong class="value">{{ c.contactHours }}</strong>
-          </li>
-        </ul>
-      </aside>
+    <div class="contact-grid">
+      <ul class="contact-list">
+        <li>
+          <span class="label">{{ c.contactEmailLabel }}</span>
+          <a class="value ltr" :href="'mailto:' + c.contactEmail">{{ c.contactEmail }}</a>
+        </li>
+        <li>
+          <span class="label">{{ c.contactPhoneLabel }}</span>
+          <a class="value ltr" :href="'tel:' + c.contactPhone">{{ c.contactPhone }}</a>
+        </li>
+        <li>
+          <span class="label">{{ c.contactAddressLabel }}</span>
+          <strong class="value">{{ c.contactAddress }}</strong>
+        </li>
+        <li>
+          <span class="label">{{ c.contactHoursLabel }}</span>
+          <strong class="value">{{ c.contactHours }}</strong>
+        </li>
+      </ul>
 
       <form class="contact-form" @submit.prevent="submit">
         <h2>{{ c.contactFormSubmit }}</h2>
@@ -46,7 +46,7 @@
         </div>
 
         <p v-if="sent" class="ok" role="status">{{ c.contactFormSuccess }}</p>
-        <button class="btn primary submit" type="submit">{{ c.contactFormSubmit }}</button>
+        <button class="btn hero-start submit" type="submit">{{ c.contactFormSubmit }}</button>
       </form>
     </div>
   </main>
@@ -75,103 +75,59 @@ function submit() {
 
 <style scoped>
 .contact-page {
-  min-height: calc(100vh - 64px);
-  padding: 40px 24px 64px;
-  background:
-    radial-gradient(800px 380px at 100% 0%, rgba(3, 24, 56, 0.07), transparent 55%),
-    var(--bg-soft);
+  padding-bottom: 72px;
 }
-
-.contact-shell {
-  max-width: 960px;
+.contact-grid {
+  max-width: 980px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: 0.95fr 1.05fr;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 24px;
-  overflow: hidden;
-  box-shadow: var(--shadow-sm);
+  grid-template-columns: 0.9fr 1.1fr;
+  gap: 28px 40px;
+  align-items: start;
 }
-
-.contact-panel {
-  padding: 36px 32px;
-  background:
-    radial-gradient(500px 280px at 0% 100%, rgba(255, 255, 255, 0.08), transparent 55%),
-    linear-gradient(160deg, #021225 0%, #031838 55%, #0a2450 100%);
-  color: #fff;
-}
-.contact-panel .eyebrow {
-  display: inline-flex;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  font-size: 0.78rem;
-  font-weight: 800;
-}
-.contact-panel h1 {
-  margin: 16px 0 10px;
-  font-size: clamp(1.7rem, 3vw, 2.2rem);
-  line-height: 1.25;
-  letter-spacing: -0.02em;
-}
-.contact-panel > p {
-  margin: 0 0 28px;
-  color: rgba(255, 255, 255, 0.78);
-  line-height: 1.7;
-  font-size: 0.98rem;
-}
-
 .contact-list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 8px 0 0;
   display: grid;
-  gap: 14px;
-}
-.contact-list li {
-  padding: 14px 0 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  gap: 18px;
 }
 .contact-list .label {
   display: block;
   margin-bottom: 6px;
-  color: rgba(255, 255, 255, 0.62);
-  font-size: 0.78rem;
+  color: var(--muted);
+  font-size: 0.8rem;
   font-weight: 800;
 }
 .contact-list .value {
-  color: #fff;
+  color: var(--ink);
   font-weight: 800;
-  font-size: 1.02rem;
+  font-size: 1.05rem;
   line-height: 1.45;
   word-break: break-word;
 }
-.contact-list a.value:hover {
-  text-decoration: underline;
-}
+.contact-list a.value:hover { color: var(--accent); }
 .ltr {
   direction: ltr;
   text-align: start;
   unicode-bidi: isolate;
   display: inline-block;
 }
-
 .contact-form {
-  padding: 36px 32px;
-  display: flex;
-  flex-direction: column;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 28px;
 }
 .contact-form h2 {
   margin: 0 0 6px;
-  font-size: 1.35rem;
-  color: var(--brand);
+  font-size: 1.25rem;
 }
 .form-note {
-  margin: 0 0 22px;
+  margin: 0 0 20px;
   color: var(--muted);
   font-size: 0.92rem;
-  line-height: 1.6;
+  line-height: 1.65;
 }
 .field {
   display: flex;
@@ -198,8 +154,8 @@ function submit() {
 .field textarea { min-height: 120px; }
 .field input:focus,
 .field textarea:focus {
-  border-color: rgba(3, 24, 56, 0.5);
-  box-shadow: 0 0 0 4px rgba(3, 24, 56, 0.1);
+  border-color: rgba(29, 78, 216, 0.45);
+  box-shadow: 0 0 0 4px rgba(29, 78, 216, 0.1);
 }
 .ok {
   color: #047857;
@@ -209,19 +165,10 @@ function submit() {
 .submit {
   width: 100%;
   justify-content: center;
-  height: 48px;
-  border-radius: 12px;
-  margin-top: auto;
+  margin-top: 4px;
 }
-
 @media (max-width: 860px) {
-  .contact-page { padding: 20px 16px 48px; }
-  .contact-shell {
-    grid-template-columns: 1fr;
-    border-radius: 20px;
-  }
-  .contact-panel,
-  .contact-form { padding: 24px 20px; }
-  .contact-panel > p { margin-bottom: 20px; }
+  .contact-grid { grid-template-columns: 1fr; gap: 28px; }
+  .contact-form { padding: 22px 18px; }
 }
 </style>

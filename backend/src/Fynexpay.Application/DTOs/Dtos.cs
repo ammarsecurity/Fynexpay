@@ -14,6 +14,8 @@ public record RegisterMerchantRequest(
 
 public record VerifyRegisterOtpRequest(Guid ChallengeId, string Code);
 
+public record VerifyLoginOtpRequest(Guid ChallengeId, string Code);
+
 public record OtpSendResultDto(Guid ChallengeId, string MaskedPhone, int ExpiresInSeconds, string? DevCode, string? Via = null);
 
 public record AuthPolicyDto(bool RequireWhatsAppOtp, bool WhatsAppEnabled, bool EmailEnabled = false, string Channel = "WhatsApp");
@@ -250,6 +252,14 @@ public record ApiKeyDto(
     string? PlatformDomain = null);
 
 public record CreateApiKeyResponse(Guid Id, string Name, string KeyPrefix, string ApiKey, DateTime CreatedAtUtc);
+
+public record MerchantBearerDto(
+    Guid? Id,
+    string? KeyPrefix,
+    bool IsActive,
+    bool CanClaim,
+    DateTime? CreatedAtUtc,
+    DateTime? LastUsedAtUtc);
 
 public record CreateMerchantPlatformRequest(string Name, string Domain);
 public record UpdateMerchantPlatformRequest(string? Name, string? Domain);

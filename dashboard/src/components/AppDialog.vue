@@ -4,9 +4,9 @@
       <div class="dlg-backdrop" @click="onCancel"></div>
       <div class="dlg-panel" role="alertdialog" aria-modal="true" :aria-labelledby="titleId">
         <div class="dlg-icon" :class="state.variant" aria-hidden="true">
-          <span v-if="state.variant === 'danger'">!</span>
-          <span v-else-if="state.variant === 'success'">✓</span>
-          <span v-else>?</span>
+          <i v-if="state.variant === 'danger'" class="bi bi-exclamation-triangle"></i>
+          <i v-else-if="state.variant === 'success'" class="bi bi-check-circle"></i>
+          <i v-else class="bi bi-question-circle"></i>
         </div>
         <h2 :id="titleId" class="dlg-title">{{ displayTitle }}</h2>
         <p class="dlg-message">{{ state.message }}</p>

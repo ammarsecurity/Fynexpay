@@ -371,6 +371,72 @@ public class OtpService
             ?? throw new InvalidOperationException("بيانات الاستعادة غير مكتملة");
     }
 
+    public async Task<OtpSendResult> SendLoginOtpAsync(User user, CancellationToken ct = default)
+    {
+        var settings = await _settings.GetAsync(ct);
+        EnsureOtpEnabled(settings, forCheckout: false);
+
+        var useWa = settings.UsesWhatsApp();
+        var useEmail = settings.UsesEmail();
+
+        string? phone = null;
+        if (useWa)
+        {
+            var raw = FirstNonEmpty(user.Phone, user.Merchant?.ContactPhone);
+            if (!string.IsNullOrWhiteSpace(raw))
+                phone = NormalizePhone(raw, settings.DefaultCountryCode);
+        }
+
+        var email = user.Email?.Trim().ToLowerInvariant();
+        var forceEmail = phone is null;
+        if (forceEmail && string.IsNullOrWhiteSpace(email))
+            throw new InvalidOperationException("لا توجد وسيلة لإرسال رمز التحقق على هذا الحساب");
+        if (forceEmail && (string.IsNullOrWhiteSpace(settings.SmtpHost) || string.IsNullOrWhiteSpace(settings.FromEmail)))
+            throw new InvalidOperationException("لا يوجد رقم هاتف على الحساب لإرسال رمز التحقق. حدّث الملف الشخصي أو فعّل قناة البريد.");
+
+        var cooldownKey = phone ?? email!;
+        await EnforceSendCooldownAsync(OtpPurpose.Login, cooldownKey, null, ct);
+
+        var payload = JsonSerializer.Serialize(new PendingLogin(user.Id), JsonOpts);
+        var code = GenerateCode();
+        var challenge = new OtpChallenge
+        {
+            Purpose = OtpPurpose.Login,
+            PhoneE164 = phone ?? "",
+            TargetEmail = email,
+            CodeHash = HashCode(code),
+            ExpiresAtUtc = DateTime.UtcNow.AddMinutes(5),
+            LastSentAtUtc = DateTime.UtcNow,
+            PayloadJson = payload
+        };
+        _db.OtpChallenges.Add(challenge);
+        await _db.SaveChangesAsync(ct);
+
+        var via = await DeliverAsync(settings, phone, email, code, forCheckout: false, ct, forceEmail);
+        var masked = BuildMaskedDestination(phone, email, useWa && phone is not null, useEmail || forceEmail);
+        return new OtpSendResult(challenge.Id, masked, 300, DevCode(code), via);
+    }
+
+    public async Task<PendingLogin> ConsumeLoginChallengeAsync(
+        Guid challengeId,
+        string code,
+        CancellationToken ct = default)
+    {
+        var challenge = await LoadActiveChallengeAsync(challengeId, OtpPurpose.Login, ct);
+        await VerifyCodeAsync(challenge, code, ct);
+        challenge.Consumed = true;
+        await _db.SaveChangesAsync(ct);
+
+        if (string.IsNullOrWhiteSpace(challenge.PayloadJson))
+            throw new InvalidOperationException("بيانات الدخول غير مكتملة");
+
+        return JsonSerializer.Deserialize<PendingLogin>(challenge.PayloadJson, JsonOpts)
+            ?? throw new InvalidOperationException("بيانات الدخول غير مكتملة");
+    }
+
+    private static string? FirstNonEmpty(params string?[] values)
+        => values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+
     private async Task<User?> FindUserByPhoneAsync(string phoneE164, string defaultCountryCode, CancellationToken ct)
     {
         var digits = phoneE164.TrimStart('+');
@@ -447,7 +513,8 @@ public class OtpService
         string? email,
         string code,
         bool forCheckout,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool forceEmail = false)
     {
         var sent = new List<string>();
         var errors = new List<string>();
@@ -470,7 +537,7 @@ public class OtpService
             }
         }
 
-        if (settings.UsesEmail() && !string.IsNullOrWhiteSpace(email))
+        if ((settings.UsesEmail() || forceEmail) && !string.IsNullOrWhiteSpace(email))
         {
             try
             {
@@ -628,6 +695,8 @@ public record PendingMerchantRegistration(
     string? WebsiteUrl);
 
 public record PendingPasswordReset(Guid UserId, string Phone);
+
+public record PendingLogin(Guid UserId);
 
 public record PendingProfileChange(
     Guid UserId,

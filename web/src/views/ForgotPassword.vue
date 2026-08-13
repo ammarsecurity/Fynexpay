@@ -2,20 +2,23 @@
   <SiteNav />
 
   <main class="auth-page">
-    <div class="auth-shell">
+    <div class="auth-stage">
+      <AuthAside :title="t('sideForgotTitle')" :body="t('sideForgotBody')" :t="t" />
+
       <section class="auth-card">
         <div class="card-head">
           <h2>{{ heading }}</h2>
           <p class="muted">{{ subheading }}</p>
         </div>
 
-        <p v-if="error" class="error">{{ error }}</p>
+        <p v-if="error" class="error" role="alert">{{ error }}</p>
         <p v-if="devCode" class="dev">DEV: {{ devCode }}</p>
 
         <form v-if="step === 'phone'" @submit.prevent="sendOtp">
           <div class="field">
-            <label>{{ t('phone') }}</label>
+            <label for="forgot-phone">{{ t('phone') }}</label>
             <input
+              id="forgot-phone"
               v-model="phone"
               class="ltr"
               type="tel"
@@ -32,8 +35,9 @@
 
         <form v-else @submit.prevent="resetPassword">
           <div class="field">
-            <label>{{ t('otpCode') }}</label>
+            <label for="forgot-otp">{{ t('otpCode') }}</label>
             <input
+              id="forgot-otp"
               v-model="otpCode"
               class="otp-input ltr"
               inputmode="numeric"
@@ -43,8 +47,9 @@
             />
           </div>
           <div class="field">
-            <label>{{ t('newPassword') }}</label>
+            <label for="forgot-pass">{{ t('newPassword') }}</label>
             <input
+              id="forgot-pass"
               v-model="newPassword"
               type="password"
               autocomplete="new-password"
@@ -54,8 +59,9 @@
             <small class="hint">{{ t('passwordHint') }}</small>
           </div>
           <div class="field">
-            <label>{{ t('confirmPassword') }}</label>
+            <label for="forgot-confirm">{{ t('confirmPassword') }}</label>
             <input
+              id="forgot-confirm"
               v-model="confirmPassword"
               type="password"
               autocomplete="new-password"
@@ -77,18 +83,15 @@
           <RouterLink to="/login">{{ t('loginLink') }}</RouterLink>
         </p>
         <p class="secure">{{ t('secureNote') }}</p>
-        <RouterLink class="back-home" to="/">{{ t('backHome') }}</RouterLink>
       </section>
     </div>
   </main>
-
-  <SiteFooter />
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
 import SiteNav from '../components/SiteNav.vue'
-import SiteFooter from '../components/SiteFooter.vue'
+import AuthAside from '../components/AuthAside.vue'
 import { api } from '../api'
 import { useLanding } from '../composables/useLanding'
 import { handoffToDashboard, useAuthCopy } from '../composables/useAuth'

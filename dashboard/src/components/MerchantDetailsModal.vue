@@ -24,7 +24,9 @@
               {{ $t('merchants.tabEdit') }}
             </button>
           </div>
-          <button class="icon-btn" type="button" :aria-label="$t('common.cancel')" @click="close">×</button>
+          <button class="icon-btn" type="button" :aria-label="$t('common.cancel')" @click="close">
+            <i class="bi bi-x-lg" aria-hidden="true"></i>
+          </button>
         </div>
       </header>
 
@@ -105,7 +107,6 @@
                 <div><dt>{{ $t('profile.bankName') }}</dt><dd>{{ detail.bankName || '—' }}</dd></div>
                 <div><dt>{{ $t('profile.bankHolder') }}</dt><dd>{{ detail.bankAccountHolder || '—' }}</dd></div>
                 <div><dt>{{ $t('profile.bankNumber') }}</dt><dd class="mono">{{ detail.bankAccountNumber || '—' }}</dd></div>
-                <div><dt>{{ $t('profile.bankIban') }}</dt><dd class="mono">{{ detail.bankIban || '—' }}</dd></div>
               </dl>
             </section>
 
@@ -238,10 +239,6 @@
               <label class="field">
                 <span>{{ $t('profile.bankNumber') }}</span>
                 <input v-model="form.bankAccountNumber" dir="ltr" />
-              </label>
-              <label class="field">
-                <span>{{ $t('profile.bankIban') }}</span>
-                <input v-model="form.bankIban" dir="ltr" />
               </label>
             </div>
           </section>

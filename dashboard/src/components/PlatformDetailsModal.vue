@@ -18,7 +18,9 @@
             <p class="muted mono id-line" dir="ltr">{{ detail?.domain || platformId }}</p>
           </div>
         </div>
-        <button class="icon-btn" type="button" :aria-label="$t('common.cancel')" @click="close">×</button>
+        <button class="icon-btn" type="button" :aria-label="$t('common.cancel')" @click="close">
+          <i class="bi bi-x-lg" aria-hidden="true"></i>
+        </button>
       </header>
 
       <div v-if="loading" class="state-box muted">{{ $t('common.loading') }}</div>

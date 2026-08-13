@@ -37,7 +37,10 @@
             <strong>{{ $t('payouts.needAccount') }}</strong>
             <p class="muted">{{ $t('payouts.bankIncomplete') }}</p>
           </div>
-          <RouterLink class="btn" to="/merchant/profile">{{ $t('payouts.addAccount') }}</RouterLink>
+          <RouterLink class="btn" to="/merchant/profile">
+            <i class="bi bi-pencil" aria-hidden="true"></i>
+            {{ $t('payouts.addAccount') }}
+          </RouterLink>
         </div>
 
         <form v-else class="request-form" @submit.prevent="create">
@@ -89,10 +92,6 @@
           <div>
             <dt>{{ $t('profile.bankNumber') }}</dt>
             <dd class="mono ltr">{{ account.bankAccountNumber }}</dd>
-          </div>
-          <div v-if="account.bankIban">
-            <dt>{{ $t('profile.bankIban') }}</dt>
-            <dd class="mono ltr">{{ account.bankIban }}</dd>
           </div>
         </dl>
         <p v-else class="muted empty-account">{{ $t('payouts.needAccount') }}</p>

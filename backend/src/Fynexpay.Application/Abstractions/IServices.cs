@@ -14,6 +14,7 @@ public interface IPasswordHasher
 public interface IApiKeyService
 {
     (string PlainKey, string Prefix, string Hash) Generate(bool isTest = false);
+    (string PlainKey, string Prefix, string Hash) GenerateMerchant();
     string Hash(string plainKey);
     bool Verify(string plainKey, string hash);
 }

@@ -19,6 +19,14 @@ public class ApiKeyService : IApiKeyService
     public (string PlainKey, string Prefix, string Hash) Generate(bool isTest = false)
     {
         var head = isTest ? "fx_test_" : "fx_live_";
+        return Build(head);
+    }
+
+    public (string PlainKey, string Prefix, string Hash) GenerateMerchant()
+        => Build("fx_merch_");
+
+    private (string PlainKey, string Prefix, string Hash) Build(string head)
+    {
         var plain = head + Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
         var prefix = plain[..Math.Min(12, plain.Length)];
         return (plain, prefix, Hash(plain));

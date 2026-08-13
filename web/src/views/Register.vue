@@ -2,9 +2,14 @@
   <SiteNav />
 
   <main class="auth-page">
-    <div class="auth-shell wide">
+    <div class="auth-stage wide">
+      <AuthAside :title="t('sideRegisterTitle')" :body="t('sideRegisterBody')" :t="t" />
+
       <section class="auth-card">
         <div class="card-head">
+          <p class="step-label" v-if="requireOtp">
+            {{ step === 'otp' ? t('otpStep') : t('formStep') }}
+          </p>
           <h2>{{ step === 'otp' ? t('otpTitle') : t('registerTitle') }}</h2>
           <p class="muted">
             {{ step === 'otp' ? t('otpSub', { phone: maskedPhone }) : t('registerSub') }}
@@ -12,48 +17,53 @@
         </div>
 
         <div v-if="requireOtp && step === 'form'" class="banner">{{ otpBanner }}</div>
-        <p v-if="error" class="error">{{ error }}</p>
+        <p v-if="error" class="error" role="alert">{{ error }}</p>
         <p v-if="devCode" class="dev">DEV: {{ devCode }}</p>
 
         <form v-if="step === 'form'" @submit.prevent="submitForm">
+          <p class="group-label">{{ t('groupIdentity') }}</p>
           <div class="grid-2">
             <div class="field">
-              <label>{{ t('fullNameAr') }}</label>
-              <input v-model="form.fullNameAr" required dir="rtl" />
+              <label for="reg-name-ar">{{ t('fullNameAr') }}</label>
+              <input id="reg-name-ar" v-model="form.fullNameAr" required dir="rtl" />
             </div>
             <div class="field">
-              <label>{{ t('fullNameEn') }}</label>
-              <input v-model="form.fullName" required dir="ltr" />
+              <label for="reg-name-en">{{ t('fullNameEn') }}</label>
+              <input id="reg-name-en" v-model="form.fullName" required dir="ltr" />
             </div>
           </div>
+
+          <p class="group-label">{{ t('groupBusiness') }}</p>
           <div class="grid-2">
             <div class="field">
-              <label>{{ t('businessName') }}</label>
-              <input v-model="form.businessName" required />
+              <label for="reg-biz">{{ t('businessName') }}</label>
+              <input id="reg-biz" v-model="form.businessName" required />
             </div>
             <div class="field">
-              <label>{{ t('businessNameAr') }}</label>
-              <input v-model="form.businessNameAr" />
+              <label for="reg-biz-ar">{{ t('businessNameAr') }}</label>
+              <input id="reg-biz-ar" v-model="form.businessNameAr" />
             </div>
           </div>
+
+          <p class="group-label">{{ t('groupAccess') }}</p>
           <div class="grid-2">
             <div class="field">
-              <label>{{ t('email') }}</label>
-              <input v-model="form.email" type="email" required />
+              <label for="reg-email">{{ t('email') }}</label>
+              <input id="reg-email" v-model="form.email" type="email" required />
             </div>
             <div class="field" v-if="needPhone">
-              <label>{{ t('phone') }}</label>
-              <input v-model="form.contactPhone" class="ltr" placeholder="07xxxxxxxxx" />
+              <label for="reg-phone">{{ t('phone') }}</label>
+              <input id="reg-phone" v-model="form.contactPhone" class="ltr" placeholder="07xxxxxxxxx" />
             </div>
           </div>
           <div class="grid-2">
             <div class="field">
-              <label>{{ t('website') }}</label>
-              <input v-model="form.websiteUrl" class="ltr" placeholder="https://" />
+              <label for="reg-web">{{ t('website') }}</label>
+              <input id="reg-web" v-model="form.websiteUrl" class="ltr" placeholder="https://" />
             </div>
             <div class="field">
-              <label>{{ t('password') }}</label>
-              <input v-model="form.password" type="password" required />
+              <label for="reg-pass">{{ t('password') }}</label>
+              <input id="reg-pass" v-model="form.password" type="password" required />
             </div>
           </div>
           <button class="btn primary submit" type="submit" :disabled="loading">
@@ -63,8 +73,9 @@
 
         <div v-else class="otp-box">
           <div class="field">
-            <label>{{ t('otpCode') }}</label>
+            <label for="reg-otp">{{ t('otpCode') }}</label>
             <input
+              id="reg-otp"
               v-model="otpCode"
               class="otp-input ltr"
               inputmode="numeric"
@@ -85,19 +96,15 @@
           {{ t('hasAccount') }}
           <RouterLink to="/login">{{ t('loginLink') }}</RouterLink>
         </p>
-        <p class="secure">{{ t('secureNote') }}</p>
-        <RouterLink class="back-home" to="/">{{ t('backHome') }}</RouterLink>
       </section>
     </div>
   </main>
-
-  <SiteFooter />
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import SiteNav from '../components/SiteNav.vue'
-import SiteFooter from '../components/SiteFooter.vue'
+import AuthAside from '../components/AuthAside.vue'
 import { api } from '../api'
 import { useLanding } from '../composables/useLanding'
 import { handoffToDashboard, useAuthCopy } from '../composables/useAuth'

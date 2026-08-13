@@ -17,6 +17,15 @@ export const useAuthStore = defineStore('auth', {
       this.applyAuth(data)
       return data
     },
+    async sendLoginOtp(email, password) {
+      const { data } = await api.post('/api/auth/login/send-otp', { email, password })
+      return data
+    },
+    async verifyLoginOtp(challengeId, code) {
+      const { data } = await api.post('/api/auth/login/verify-otp', { challengeId, code })
+      this.applyAuth(data)
+      return data
+    },
     async register(payload) {
       const { data } = await api.post('/api/auth/register', payload)
       this.applyAuth(data)

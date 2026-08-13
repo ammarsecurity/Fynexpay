@@ -65,6 +65,27 @@ public class AuthController : ControllerBase
     {
         try { return Ok(await _auth.LoginAsync(request, ct)); }
         catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+    }
+
+    [HttpPost("login/send-otp")]
+    [AllowAnonymous]
+    public async Task<ActionResult<OtpSendResultDto>> SendLoginOtp([FromBody] LoginRequest request, CancellationToken ct)
+    {
+        try { return Ok(await _auth.SendLoginOtpAsync(request, ct)); }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+    }
+
+    [HttpPost("login/verify-otp")]
+    [AllowAnonymous]
+    public async Task<ActionResult<AuthResponse>> VerifyLoginOtp([FromBody] VerifyLoginOtpRequest request, CancellationToken ct)
+    {
+        try { return Ok(await _auth.VerifyLoginOtpAsync(request, ct)); }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
     }
 
@@ -424,6 +445,24 @@ public class MerchantDashboardController : ControllerBase
     [HttpGet("api-keys")]
     public async Task<ActionResult<IEnumerable<ApiKeyDto>>> ApiKeys(CancellationToken ct)
         => Ok(await _merchants.ListApiKeysAsync(MerchantId, ct));
+
+    [HttpGet("merchant-key")]
+    public async Task<ActionResult<MerchantBearerDto>> MerchantKey(CancellationToken ct)
+        => Ok(await _merchants.GetMerchantBearerAsync(MerchantId, ct));
+
+    [HttpPost("merchant-key/claim")]
+    public async Task<ActionResult<CreateApiKeyResponse>> ClaimMerchantKey(CancellationToken ct)
+    {
+        try { return Ok(await _merchants.ClaimMerchantBearerAsync(MerchantId, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
+    [HttpPost("merchant-key/regenerate")]
+    public async Task<ActionResult<CreateApiKeyResponse>> RegenerateMerchantKey(CancellationToken ct)
+    {
+        try { return Ok(await _merchants.RegenerateMerchantBearerAsync(MerchantId, ct)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+    }
 
     [HttpPost("api-keys")]
     public async Task<ActionResult> CreateApiKey([FromBody] CreateApiKeyBody body, CancellationToken ct)

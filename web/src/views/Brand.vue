@@ -1,52 +1,57 @@
 <template>
   <SiteNav />
 
-  <main class="legal-page" v-if="page">
-    <aside class="legal-toc">
-      <p class="toc-title">{{ page.tocTitle }}</p>
-      <a href="#assets">{{ locale === 'en' ? 'Assets' : 'الأصول' }}</a>
-      <a v-for="(s, i) in page.sections" :key="i" :href="'#' + slug(s.heading, i)">{{ s.heading }}</a>
-    </aside>
-
-    <article class="legal-article">
+  <main class="page-shell legal-shell" v-if="page">
+    <div class="page-hero legal-hero">
       <p class="legal-kicker">{{ page.updated }}</p>
       <h1>{{ page.title }}</h1>
-      <p class="lead" v-if="page.intro">{{ page.intro }}</p>
+      <p v-if="page.intro">{{ page.intro }}</p>
+    </div>
 
-      <section id="assets" class="brand-assets">
-        <h2>{{ locale === 'en' ? 'Official assets' : 'الأصول الرسمية' }}</h2>
-        <div class="asset-grid">
-          <figure class="asset light">
-            <img src="/full-logo.png" alt="Fynexpay" />
-            <figcaption>{{ locale === 'en' ? 'Wordmark — light backgrounds' : 'الشعار النصي — خلفيات فاتحة' }}</figcaption>
-          </figure>
-          <figure class="asset dark">
-            <img class="invert-logo" src="/full-logo.png" alt="Fynexpay" />
-            <figcaption>{{ locale === 'en' ? 'Wordmark — dark backgrounds' : 'الشعار النصي — خلفيات داكنة' }}</figcaption>
-          </figure>
-          <figure class="asset light">
-            <img src="/icon-logo.png" alt="" />
-            <figcaption>{{ locale === 'en' ? 'App icon' : 'أيقونة التطبيق' }}</figcaption>
-          </figure>
-          <figure class="asset dark">
-            <img src="/icon-logo-white.png" alt="" />
-            <figcaption>{{ locale === 'en' ? 'Icon on dark' : 'الأيقونة على داكن' }}</figcaption>
-          </figure>
-        </div>
-        <div class="swatches">
-          <div class="swatch" style="--sw:#031838"><span>#031838</span></div>
-          <div class="swatch pale" style="--sw:#f5f7fb"><span>#F5F7FB</span></div>
-        </div>
-      </section>
+    <div class="legal-page">
+      <aside class="legal-toc">
+        <p class="toc-title">{{ page.tocTitle }}</p>
+        <a href="#assets">{{ locale === 'en' ? 'Assets' : 'الأصول' }}</a>
+        <a v-for="(s, i) in page.sections" :key="i" :href="'#' + slug(s.heading, i)">{{ s.heading }}</a>
+      </aside>
 
-      <section v-for="(s, i) in page.sections" :key="i" :id="slug(s.heading, i)">
-        <h2>{{ s.heading }}</h2>
-        <p v-for="(para, pi) in paras(s.body)" :key="pi">{{ para }}</p>
-        <ul v-if="s.items?.length">
-          <li v-for="(item, ii) in s.items" :key="ii">{{ item }}</li>
-        </ul>
-      </section>
-    </article>
+      <article class="legal-article">
+        <section id="assets" class="brand-assets">
+          <h2>{{ locale === 'en' ? 'Official assets' : 'الأصول الرسمية' }}</h2>
+          <div class="asset-grid">
+            <figure class="asset light">
+              <img src="/full-logo.png" alt="Fynexpay" />
+              <figcaption>{{ locale === 'en' ? 'Wordmark — light backgrounds' : 'الشعار النصي — خلفيات فاتحة' }}</figcaption>
+            </figure>
+            <figure class="asset dark">
+              <img class="invert-logo" src="/full-logo.png" alt="Fynexpay" />
+              <figcaption>{{ locale === 'en' ? 'Wordmark — dark backgrounds' : 'الشعار النصي — خلفيات داكنة' }}</figcaption>
+            </figure>
+            <figure class="asset light">
+              <img src="/icon-logo.png" alt="" />
+              <figcaption>{{ locale === 'en' ? 'App icon' : 'أيقونة التطبيق' }}</figcaption>
+            </figure>
+            <figure class="asset dark">
+              <img src="/icon-logo-white.png" alt="" />
+              <figcaption>{{ locale === 'en' ? 'Icon on dark' : 'الأيقونة على داكن' }}</figcaption>
+            </figure>
+          </div>
+          <div class="swatches">
+            <div class="swatch" style="--sw:#031838"><span>#031838</span></div>
+            <div class="swatch" style="--sw:#1d4ed8"><span>#1D4ED8</span></div>
+            <div class="swatch pale" style="--sw:#f7f8fb"><span>#F7F8FB</span></div>
+          </div>
+        </section>
+
+        <section v-for="(s, i) in page.sections" :key="i" :id="slug(s.heading, i)">
+          <h2>{{ s.heading }}</h2>
+          <p v-for="(para, pi) in paras(s.body)" :key="pi">{{ para }}</p>
+          <ul v-if="s.items?.length">
+            <li v-for="(item, ii) in s.items" :key="ii">{{ item }}</li>
+          </ul>
+        </section>
+      </article>
+    </div>
   </main>
 
   <SiteFooter />

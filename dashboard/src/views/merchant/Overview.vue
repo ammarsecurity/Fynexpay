@@ -25,7 +25,10 @@
         <span v-if="merchant" class="badge" :class="statusClass(merchant.status)">
           {{ $t(`status.${merchant.status}`, merchant.status) }}
         </span>
-        <RouterLink class="btn" to="/merchant/test">{{ $t('merchantOverview.newPayment') }}</RouterLink>
+        <RouterLink class="btn" to="/merchant/test">
+          <i class="bi bi-plus-lg" aria-hidden="true"></i>
+          {{ $t('merchantOverview.newPayment') }}
+        </RouterLink>
       </div>
     </div>
 
@@ -38,25 +41,25 @@
 
     <div class="grid" v-if="wallet">
       <div class="stat">
-        <div class="ico purple">د</div>
+        <div class="ico purple"><i class="bi bi-wallet2" aria-hidden="true"></i></div>
         <div class="label">{{ $t('merchantOverview.available') }}</div>
         <div class="value">{{ money(wallet.availableBalance) }}</div>
         <div class="trend">{{ $t('merchantOverview.readyWithdraw') }}</div>
       </div>
       <div class="stat">
-        <div class="ico amber">…</div>
+        <div class="ico amber"><i class="bi bi-hourglass-split" aria-hidden="true"></i></div>
         <div class="label">{{ $t('merchantOverview.pending') }}</div>
         <div class="value">{{ money(wallet.pendingBalance) }}</div>
         <div class="trend">{{ $t('merchantOverview.settling') }}</div>
       </div>
       <div class="stat">
-        <div class="ico green">↑</div>
+        <div class="ico green"><i class="bi bi-graph-up-arrow" aria-hidden="true"></i></div>
         <div class="label">{{ $t('merchantOverview.lifetimeGross') }}</div>
         <div class="value">{{ money(overviewGross) }}</div>
         <div class="trend">{{ $t('merchantOverview.paidOps', { n: paidCount }) }}</div>
       </div>
       <div class="stat">
-        <div class="ico sky">%</div>
+        <div class="ico sky"><i class="bi bi-percent" aria-hidden="true"></i></div>
         <div class="label">{{ $t('merchantOverview.commission') }}</div>
         <div class="value">{{ commissionRange }}</div>
         <div class="trend">{{ $t('merchantOverview.commissionByProvider') }}</div>

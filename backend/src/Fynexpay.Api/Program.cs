@@ -47,7 +47,7 @@ builder.Services.AddSwaggerGen(c =>
         Version = "v1",
         Description =
             "نفس مرجع صفحة دليل الربط في لوحة التاجر.\n\n" +
-            "المصادقة: `X-Api-Key` (مفتاح المنصة المعتمدة).\n" +
+            "المصادقة: `Authorization: Bearer fx_merch_...` لكل `/v1`، و`X-Api-Key` إضافي لمسارات الدفع.\n" +
             "المنصة تُستنتج من المفتاح — لا تُرسل merchantPlatformId في الـ body.\n" +
             "بعد الإنشاء: وجّه الزبون إلى `checkoutUrl`."
     });
@@ -60,23 +60,22 @@ builder.Services.AddSwaggerGen(c =>
         string.Equals(docName, "merchant", StringComparison.OrdinalIgnoreCase)
         && string.Equals(apiDesc.GroupName, "merchant", StringComparison.OrdinalIgnoreCase));
 
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Description = "Merchant secret — Authorization: Bearer fx_merch_...",
+        Name = "Authorization",
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "fx_merch_"
+    });
+
     c.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
     {
-        Description = "Merchant platform API key — header X-Api-Key",
+        Description = "Platform API key — header X-Api-Key (payments only)",
         Name = "X-Api-Key",
         In = ParameterLocation.Header,
         Type = SecuritySchemeType.ApiKey
-    });
-
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "ApiKey" }
-            },
-            Array.Empty<string>()
-        }
     });
 });
 
@@ -97,6 +96,16 @@ catch (Exception ex)
     app.Logger.LogWarning(ex, "Database seed skipped — ensure MySQL is running and connection string is correct.");
 }
 
+var uploadsRoot = Path.Combine(app.Environment.ContentRootPath, "wwwroot");
+Directory.CreateDirectory(Path.Combine(uploadsRoot, "uploads", "providers"));
+Directory.CreateDirectory(Path.Combine(uploadsRoot, "uploads", "platforms"));
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(uploadsRoot),
+    RequestPath = ""
+});
+
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
@@ -106,19 +115,18 @@ app.UseSwaggerUI(c =>
     c.DocExpansion(Swashbuckle.AspNetCore.SwaggerUI.DocExpansion.List);
     c.EnableFilter();
     c.RoutePrefix = "swagger";
+    c.HeadContent = """
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@500;700;800&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="/swagger-ui/fynexpay.css?v=3">
+        <link rel="icon" href="/swagger-ui/icon-logo.png">
+        <script src="/swagger-ui/fynexpay.js?v=3" defer></script>
+        """;
 });
-
-var uploadsRoot = Path.Combine(app.Environment.ContentRootPath, "wwwroot");
-Directory.CreateDirectory(Path.Combine(uploadsRoot, "uploads", "providers"));
-Directory.CreateDirectory(Path.Combine(uploadsRoot, "uploads", "platforms"));
 
 app.UseRateLimiter();
 app.UseCors();
-app.UseStaticFiles(new StaticFileOptions
-{
-    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(uploadsRoot),
-    RequestPath = ""
-});
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<ApiKeyAuthenticationMiddleware>();

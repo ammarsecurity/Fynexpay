@@ -7,7 +7,9 @@
           <h2>{{ $t('payments.detailsTitle') }}</h2>
           <p class="muted mono">{{ payment?.id }}</p>
         </div>
-        <button class="btn secondary" type="button" @click="close">{{ $t('common.cancel') }}</button>
+        <button class="icon-btn" type="button" :aria-label="$t('common.cancel')" @click="close">
+          <i class="bi bi-x-lg" aria-hidden="true"></i>
+        </button>
       </div>
 
       <div v-if="loading" class="muted">{{ $t('common.loading') }}</div>
