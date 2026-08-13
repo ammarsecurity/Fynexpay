@@ -51,15 +51,16 @@
     </div>
   </main>
 
-  <footer class="site-footer" v-if="c">© {{ year }} Fynexpay — {{ c.footer }}</footer>
+  <SiteFooter />
 </template>
 
 <script setup>
 import { reactive, ref } from 'vue'
 import SiteNav from '../components/SiteNav.vue'
+import SiteFooter from '../components/SiteFooter.vue'
 import { useLanding } from '../composables/useLanding'
 
-const { c, year } = useLanding()
+const { c } = useLanding()
 const sent = ref(false)
 const form = reactive({ name: '', email: '', message: '' })
 

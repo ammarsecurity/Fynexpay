@@ -175,7 +175,7 @@ const platforms = ref([])
 const toast = ref('')
 let timer = null
 
-const swaggerUrl = `${API_BASE}/swagger/index.html?urls.primaryName=${encodeURIComponent('Merchant API')}`
+const swaggerUrl = `${API_BASE}/swagger/index.html`
 const approvedPlatforms = computed(() => (platforms.value || []).filter(p => p.status === 'Approved'))
 const sampleDomain = computed(() => approvedPlatforms.value[0]?.domain || 'shop.example.com')
 const sampleKey = 'YOUR_PLATFORM_API_KEY'

@@ -9,7 +9,7 @@
         <p class="sub">{{ c.heroSubtitle }}</p>
         <div class="hero-cta">
           <RouterLink class="btn primary" to="/register">{{ c.ctaMerchant }}</RouterLink>
-          <a class="btn ghost" :href="apiUrl + '/swagger/index.html?urls.primaryName=' + encodeURIComponent('Merchant API')">{{ c.ctaDocs }}</a>
+          <a class="btn ghost" :href="apiUrl + '/swagger/index.html'">{{ c.ctaDocs }}</a>
         </div>
       </div>
 
@@ -90,12 +90,13 @@
     </div>
   </section>
 
-  <footer class="site-footer" v-if="c">© {{ year }} Fynexpay — {{ c.footer }}</footer>
+  <SiteFooter />
 </template>
 
 <script setup>
 import SiteNav from '../components/SiteNav.vue'
+import SiteFooter from '../components/SiteFooter.vue'
 import { useLanding } from '../composables/useLanding'
 
-const { c, apiUrl, year } = useLanding()
+const { c, apiUrl } = useLanding()
 </script>

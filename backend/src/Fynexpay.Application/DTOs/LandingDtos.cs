@@ -35,6 +35,8 @@ public class LandingLocaleDto
     public string CtaRegister { get; set; } = "";
     public string CtaContact { get; set; } = "";
     public string Footer { get; set; } = "";
+    public string FooterDisclaimer { get; set; } = "";
+    public string FooterLegalNote { get; set; } = "";
     public string MockDashboard { get; set; } = "";
     public string MockToday { get; set; } = "";
     public string MockSuccess { get; set; } = "";
@@ -57,6 +59,7 @@ public class LandingLocaleDto
     public string ContactFormSubmit { get; set; } = "";
     public string ContactFormNote { get; set; } = "";
     public string ContactFormSuccess { get; set; } = "";
+    public LegalBundleDto Legal { get; set; } = new();
 }
 
 public class LandingFeatureDto
@@ -111,6 +114,8 @@ public static class LandingDefaults
         CtaRegister = "إنشاء حساب ←",
         CtaContact = "تسجيل الدخول",
         Footer = "بوابة دفع عراقية",
+        FooterDisclaimer = "موقع Fynexpay وأي محتوى مذكور فيه غير معتمد أو مرتبط مباشرة أو مرخص أو مدعوم من قبل أي مؤسسة مالية (ما لم يُذكر خلاف ذلك صراحة). جميع أسماء الشركات والشعارات والعلامات التجارية المذكورة هي ملك لأصحابها الأصليين.",
+        FooterLegalNote = "Fynexpay مسجّلة في العراق تحت الكيان القانوني: يُحدَّث الاسم ورقم التسجيل من لوحة الإدارة. المقر: بغداد، العراق.",
         MockDashboard = "لوحة المدفوعات",
         MockToday = "اليوم",
         MockSuccess = "نجاح",
@@ -132,7 +137,8 @@ public static class LandingDefaults
         ContactFormMessage = "رسالتك",
         ContactFormSubmit = "إرسال الرسالة",
         ContactFormNote = "سيتم فتح بريدك لإرسال الرسالة مباشرة إلى فريق الدعم.",
-        ContactFormSuccess = "تم تجهيز الرسالة — أكمل الإرسال من تطبيق البريد."
+        ContactFormSuccess = "تم تجهيز الرسالة — أكمل الإرسال من تطبيق البريد.",
+        Legal = LegalContentDefaults.Arabic()
     };
 
     public static LandingLocaleDto English() => new()
@@ -172,6 +178,8 @@ public static class LandingDefaults
         CtaRegister = "Create account →",
         CtaContact = "Sign in",
         Footer = "Iraqi payment gateway",
+        FooterDisclaimer = "The Fynexpay website and any content on it are not endorsed by, affiliated with, licensed by, or sponsored by any financial institution (unless expressly stated otherwise). All company names, logos, and trademarks mentioned remain the property of their respective owners.",
+        FooterLegalNote = "Fynexpay is registered in Iraq under its legal entity: update the official name and registration number from the admin panel. Headquarters: Baghdad, Iraq.",
         MockDashboard = "Payments dashboard",
         MockToday = "Today",
         MockSuccess = "Success",
@@ -193,6 +201,7 @@ public static class LandingDefaults
         ContactFormMessage = "Your message",
         ContactFormSubmit = "Send message",
         ContactFormNote = "This opens your email client to send the message to our support team.",
-        ContactFormSuccess = "Message drafted — finish sending from your email app."
+        ContactFormSuccess = "Message drafted — finish sending from your email app.",
+        Legal = LegalContentDefaults.English()
     };
 }

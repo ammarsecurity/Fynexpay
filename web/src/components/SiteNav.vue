@@ -9,6 +9,7 @@
         <a href="/#features" :class="{ active: isSection('features') }" @click="closeMenu">{{ c.navFeatures }}</a>
         <a href="/#api" :class="{ active: isSection('api') }" @click="closeMenu">{{ c.navDevelopers }}</a>
         <RouterLink to="/contact" @click="closeMenu">{{ c.navContact }}</RouterLink>
+        <RouterLink to="/company" @click="closeMenu">{{ c.legal?.company?.nav }}</RouterLink>
       </nav>
 
       <div class="nav-actions">
@@ -38,6 +39,8 @@
         <a href="/#features" @click="closeMenu">{{ c.navFeatures }}</a>
         <a href="/#api" @click="closeMenu">{{ c.navDevelopers }}</a>
         <RouterLink to="/contact" @click="closeMenu">{{ c.navContact }}</RouterLink>
+        <RouterLink to="/company" @click="closeMenu">{{ c.legal?.company?.nav }}</RouterLink>
+        <RouterLink to="/terms" @click="closeMenu">{{ c.legal?.terms?.nav }}</RouterLink>
       </nav>
       <div class="mobile-cta">
         <RouterLink class="btn soft" to="/login" @click="closeMenu">{{ c.login }}</RouterLink>

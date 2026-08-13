@@ -37,8 +37,12 @@ public class LandingContentService
 
         var content = JsonSerializer.Deserialize<LandingContentDto>(row.Value, JsonOpts)
                       ?? LandingDefaults.Create();
+        var missingLegal = content.Ar?.Legal?.Terms?.Sections is not { Count: > 0 }
+                           || content.En?.Legal?.Terms?.Sections is not { Count: > 0 };
+        var missingFooterNotes = string.IsNullOrWhiteSpace(content.Ar?.FooterDisclaimer)
+                                 || string.IsNullOrWhiteSpace(content.En?.FooterDisclaimer);
         content = MergeWithDefaults(content);
-        if (ScrubProviderBrandNames(content))
+        if (missingLegal || missingFooterNotes || ScrubProviderBrandNames(content))
             await PersistAsync(content, ct);
         _cache = content;
         return Clone(content);
@@ -114,6 +118,8 @@ public class LandingContentService
         src.CtaRegister = Pick(src.CtaRegister, fallback.CtaRegister);
         src.CtaContact = Pick(src.CtaContact, fallback.CtaContact);
         src.Footer = Pick(src.Footer, fallback.Footer);
+        src.FooterDisclaimer = Pick(src.FooterDisclaimer, fallback.FooterDisclaimer);
+        src.FooterLegalNote = Pick(src.FooterLegalNote, fallback.FooterLegalNote);
         src.MockDashboard = Pick(src.MockDashboard, fallback.MockDashboard);
         src.MockToday = Pick(src.MockToday, fallback.MockToday);
         src.MockSuccess = Pick(src.MockSuccess, fallback.MockSuccess);
@@ -136,6 +142,7 @@ public class LandingContentService
         src.ContactFormSubmit = Pick(src.ContactFormSubmit, fallback.ContactFormSubmit);
         src.ContactFormNote = Pick(src.ContactFormNote, fallback.ContactFormNote);
         src.ContactFormSuccess = Pick(src.ContactFormSuccess, fallback.ContactFormSuccess);
+        src.Legal = MergeLegal(src.Legal, fallback.Legal);
 
         if (src.Features == null || src.Features.Count == 0)
             src.Features = fallback.Features.Select(f => new LandingFeatureDto { Icon = f.Icon, Title = f.Title, Body = f.Body }).ToList();
@@ -143,6 +150,65 @@ public class LandingContentService
 
         return src;
     }
+
+    private static LegalBundleDto MergeLegal(LegalBundleDto? src, LegalBundleDto fallback)
+    {
+        src ??= new LegalBundleDto();
+        src.Terms = MergePage(src.Terms, fallback.Terms);
+        src.Privacy = MergePage(src.Privacy, fallback.Privacy);
+        src.Prohibited = MergePage(src.Prohibited, fallback.Prohibited);
+        src.Brand = MergePage(src.Brand, fallback.Brand);
+        src.Company = MergeCompany(src.Company, fallback.Company);
+        return src;
+    }
+
+    private static LegalPageDto MergePage(LegalPageDto? src, LegalPageDto fb)
+    {
+        src ??= new LegalPageDto();
+        src.Nav = Pick(src.Nav, fb.Nav);
+        src.Title = Pick(src.Title, fb.Title);
+        src.Updated = Pick(src.Updated, fb.Updated);
+        src.TocTitle = Pick(src.TocTitle, fb.TocTitle);
+        src.Intro = Pick(src.Intro, fb.Intro);
+        if (src.Sections == null || src.Sections.Count == 0)
+            src.Sections = CloneSections(fb.Sections);
+        return src;
+    }
+
+    private static CompanyPageDto MergeCompany(CompanyPageDto? src, CompanyPageDto fb)
+    {
+        src ??= new CompanyPageDto();
+        src.Nav = Pick(src.Nav, fb.Nav);
+        src.Title = Pick(src.Title, fb.Title);
+        src.Updated = Pick(src.Updated, fb.Updated);
+        src.Intro = Pick(src.Intro, fb.Intro);
+        src.RegistrationTitle = Pick(src.RegistrationTitle, fb.RegistrationTitle);
+        src.IraqTitle = Pick(src.IraqTitle, fb.IraqTitle);
+        src.IraqLegalNameLabel = Pick(src.IraqLegalNameLabel, fb.IraqLegalNameLabel);
+        src.IraqLegalName = Pick(src.IraqLegalName, fb.IraqLegalName);
+        src.IraqRegistryLabel = Pick(src.IraqRegistryLabel, fb.IraqRegistryLabel);
+        src.IraqRegistry = Pick(src.IraqRegistry, fb.IraqRegistry);
+        src.IraqHqLabel = Pick(src.IraqHqLabel, fb.IraqHqLabel);
+        src.IraqHq = Pick(src.IraqHq, fb.IraqHq);
+        src.CertsTitle = Pick(src.CertsTitle, fb.CertsTitle);
+        src.CertsBody = Pick(src.CertsBody, fb.CertsBody);
+        src.ContactTitle = Pick(src.ContactTitle, fb.ContactTitle);
+        src.ContactEmail = Pick(src.ContactEmail, fb.ContactEmail);
+        src.ContactPhone = Pick(src.ContactPhone, fb.ContactPhone);
+        src.ContactWebsite = Pick(src.ContactWebsite, fb.ContactWebsite);
+        src.Disclaimer = Pick(src.Disclaimer, fb.Disclaimer);
+        if (src.Certs == null || src.Certs.Count == 0)
+            src.Certs = CloneSections(fb.Certs);
+        return src;
+    }
+
+    private static List<LegalSectionDto> CloneSections(IEnumerable<LegalSectionDto>? sections) =>
+        (sections ?? []).Select(s => new LegalSectionDto
+        {
+            Heading = s.Heading,
+            Body = s.Body,
+            Items = s.Items?.ToList() ?? []
+        }).ToList();
 
     /// <summary>
     /// Strip hardcoded PSP brand names from marketing copy (logos are shown instead).

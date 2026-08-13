@@ -6,6 +6,9 @@ import Contact from './views/Contact.vue'
 import Login from './views/Login.vue'
 import Register from './views/Register.vue'
 import ForgotPassword from './views/ForgotPassword.vue'
+import LegalPage from './views/LegalPage.vue'
+import Brand from './views/Brand.vue'
+import Company from './views/Company.vue'
 import './assets/main.css'
 import './assets/auth.css'
 
@@ -22,7 +25,12 @@ const router = createRouter({
     { path: '/login', component: Login },
     { path: '/forgot', component: ForgotPassword },
     { path: '/forgot-password', redirect: '/forgot' },
-    { path: '/register', component: Register }
+    { path: '/register', component: Register },
+    { path: '/terms', component: LegalPage, meta: { legal: 'terms' } },
+    { path: '/privacy', component: LegalPage, meta: { legal: 'privacy' } },
+    { path: '/prohibited', component: LegalPage, meta: { legal: 'prohibited' } },
+    { path: '/brand', component: Brand },
+    { path: '/company', component: Company }
   ],
   scrollBehavior(to) {
     if (to.hash) return { el: to.hash, behavior: 'smooth' }

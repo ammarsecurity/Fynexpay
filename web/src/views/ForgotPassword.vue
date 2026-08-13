@@ -82,17 +82,18 @@
     </div>
   </main>
 
-  <footer class="site-footer" v-if="c">© {{ year }} Fynexpay — {{ c.footer }}</footer>
+  <SiteFooter />
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
 import SiteNav from '../components/SiteNav.vue'
+import SiteFooter from '../components/SiteFooter.vue'
 import { api } from '../api'
 import { useLanding } from '../composables/useLanding'
 import { handoffToDashboard, useAuthCopy } from '../composables/useAuth'
 
-const { c, locale, dashboardUrl, year } = useLanding()
+const { locale, dashboardUrl } = useLanding()
 const { t } = useAuthCopy(locale)
 
 const step = ref('phone')

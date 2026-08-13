@@ -55,25 +55,10 @@ builder.Services.AddSwaggerGen(c =>
     c.SchemaFilter<MerchantApiExamplesFilter>();
     c.OperationFilter<MerchantApiExamplesFilter>();
 
-    c.SwaggerDoc("internal", new OpenApiInfo
-    {
-        Title = "Fynexpay Internal API",
-        Version = "v1",
-        Description = "واجهات لوحة التحكم والأدمن — للاستخدام الداخلي فقط."
-    });
-
-    // Merchant doc = only controllers marked GroupName = "merchant"
+    // Public docs: Merchant API only — never expose dashboard/admin endpoints.
     c.DocInclusionPredicate((docName, apiDesc) =>
-    {
-        var group = apiDesc.GroupName ?? string.Empty;
-        if (string.Equals(docName, "merchant", StringComparison.OrdinalIgnoreCase))
-            return string.Equals(group, "merchant", StringComparison.OrdinalIgnoreCase);
-
-        if (string.Equals(docName, "internal", StringComparison.OrdinalIgnoreCase))
-            return !string.Equals(group, "merchant", StringComparison.OrdinalIgnoreCase);
-
-        return false;
-    });
+        string.Equals(docName, "merchant", StringComparison.OrdinalIgnoreCase)
+        && string.Equals(apiDesc.GroupName, "merchant", StringComparison.OrdinalIgnoreCase));
 
     c.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
     {
@@ -83,17 +68,6 @@ builder.Services.AddSwaggerGen(c =>
         Type = SecuritySchemeType.ApiKey
     });
 
-    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-    {
-        Description = "Dashboard JWT — Authorization: Bearer {token}",
-        Name = "Authorization",
-        In = ParameterLocation.Header,
-        Type = SecuritySchemeType.Http,
-        Scheme = "bearer",
-        BearerFormat = "JWT"
-    });
-
-    // Default security shown in UI; merchants use ApiKey on /v1.
     c.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
         {
@@ -123,20 +97,16 @@ catch (Exception ex)
     app.Logger.LogWarning(ex, "Database seed skipped — ensure MySQL is running and connection string is correct.");
 }
 
-if (app.Environment.IsDevelopment())
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        // Merchant API first — what Docs / integration page should open
-        c.SwaggerEndpoint("/swagger/merchant/swagger.json", "Merchant API");
-        c.SwaggerEndpoint("/swagger/internal/swagger.json", "Internal (Dashboard/Admin)");
-        c.DocumentTitle = "Fynexpay Merchant API";
-        c.DefaultModelsExpandDepth(-1);
-        c.DocExpansion(Swashbuckle.AspNetCore.SwaggerUI.DocExpansion.List);
-        c.EnableFilter();
-    });
-}
+    c.SwaggerEndpoint("/swagger/merchant/swagger.json", "Merchant API");
+    c.DocumentTitle = "Fynexpay Merchant API";
+    c.DefaultModelsExpandDepth(-1);
+    c.DocExpansion(Swashbuckle.AspNetCore.SwaggerUI.DocExpansion.List);
+    c.EnableFilter();
+    c.RoutePrefix = "swagger";
+});
 
 var uploadsRoot = Path.Combine(app.Environment.ContentRootPath, "wwwroot");
 Directory.CreateDirectory(Path.Combine(uploadsRoot, "uploads", "providers"));
@@ -154,9 +124,7 @@ app.UseAuthorization();
 app.UseMiddleware<ApiKeyAuthenticationMiddleware>();
 app.MapControllers();
 
-app.MapGet("/", () => app.Environment.IsDevelopment()
-    ? Results.Redirect("/swagger/index.html?urls.primaryName=Merchant%20API")
-    : Results.Ok(new { service = "Fynexpay", status = "ok" }));
+app.MapGet("/", () => Results.Ok(new { service = "Fynexpay", status = "ok" }));
 
 app.Run();
 
