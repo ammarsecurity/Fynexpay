@@ -253,6 +253,34 @@
   font-size: 1.35rem;
   font-weight: 800;
 }
+.otp-resend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: -2px 0 18px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.otp-resend-btn {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 0;
+}
+.otp-resend-btn:hover:not(:disabled) { text-decoration: underline; }
+.otp-resend-btn:disabled {
+  color: var(--muted);
+  cursor: default;
+  font-weight: 700;
+  text-decoration: none;
+}
 .linkish {
   display: inline-block;
   margin-top: 14px;

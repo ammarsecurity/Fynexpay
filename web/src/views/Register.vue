@@ -83,13 +83,21 @@
               placeholder="••••••"
             />
           </div>
+          <p class="otp-resend">
+            <span>{{ t('noCode') }}</span>
+            <button
+              class="otp-resend-btn"
+              type="button"
+              :disabled="resending || !canResend"
+              @click="resendOtp"
+            >
+              {{ canResend ? t('resend') : t('resendIn', { time: clock }) }}
+            </button>
+          </p>
           <button class="btn primary submit" type="button" :disabled="loading || otpCode.length < 6" @click="verifyOtp">
             {{ loading ? t('loading') : t('verify') }}
           </button>
-          <button class="btn soft submit" type="button" :disabled="loading" @click="resendOtp">
-            {{ t('resend') }}
-          </button>
-          <button class="linkish" type="button" @click="step = 'form'">{{ t('back') }}</button>
+          <button class="linkish" type="button" @click="backToForm">{{ t('back') }}</button>
         </div>
 
         <p class="footer-link muted">
@@ -108,6 +116,7 @@ import AuthAside from '../components/AuthAside.vue'
 import { api } from '../api'
 import { useLanding } from '../composables/useLanding'
 import { handoffToDashboard, useAuthCopy } from '../composables/useAuth'
+import { useOtpResend } from '../composables/useOtpResend'
 
 const { locale, dashboardUrl } = useLanding()
 const { t } = useAuthCopy(locale)
@@ -122,6 +131,8 @@ const challengeId = ref('')
 const maskedPhone = ref('')
 const otpCode = ref('')
 const devCode = ref('')
+const resending = ref(false)
+const { canResend, clock, startCooldown, resetCooldown } = useOtpResend()
 
 const form = reactive({
   fullName: '',
@@ -167,6 +178,7 @@ async function submitForm() {
     devCode.value = data.devCode || ''
     otpCode.value = data.devCode || ''
     step.value = 'otp'
+    startCooldown()
   } catch (e) {
     error.value = e.response?.data?.message || t('registerFail')
   } finally {
@@ -189,19 +201,26 @@ async function verifyOtp() {
   }
 }
 
+function backToForm() {
+  step.value = 'form'
+  resetCooldown()
+}
+
 async function resendOtp() {
+  if (!canResend.value || resending.value) return
   error.value = ''
-  loading.value = true
+  resending.value = true
   try {
     const { data } = await api.post('/api/auth/register/send-otp', { ...form })
     challengeId.value = data.challengeId
     maskedPhone.value = data.maskedPhone
     devCode.value = data.devCode || ''
     otpCode.value = data.devCode || ''
+    startCooldown()
   } catch (e) {
     error.value = e.response?.data?.message || t('otpFail')
   } finally {
-    loading.value = false
+    resending.value = false
   }
 }
 </script>

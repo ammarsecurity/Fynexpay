@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { isJwtExpired } from '../api'
 import { useAuthStore } from '../stores/auth'
 
 const routes = [
@@ -53,7 +54,12 @@ const pendingMerchantAllowed = new Set([
 
 router.beforeEach((to) => {
   const auth = useAuthStore()
-  if (to.meta.auth && !auth.isAuthenticated) return '/login'
+  const expired = !!(auth.token && isJwtExpired(auth.token))
+  if (expired) auth.logout()
+
+  if (to.meta.auth && !auth.isAuthenticated) {
+    return expired ? { path: '/login', query: { session: 'expired' } } : '/login'
+  }
   if (to.meta.guest && auth.isAuthenticated && to.name !== 'auth-handoff') return '/'
   if (to.meta.admin && !auth.isAdmin) return '/merchant'
   if (to.meta.merchant && !auth.isMerchant) return '/admin'

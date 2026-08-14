@@ -17,6 +17,7 @@
         </div>
 
         <div v-if="requireOtp && step === 'form'" class="banner">{{ loginOtpBanner }}</div>
+        <p v-if="sessionNotice" class="error" role="status">{{ sessionNotice }}</p>
         <p v-if="error" class="error" role="alert">{{ error }}</p>
         <p v-if="devCode" class="dev">DEV: {{ devCode }}</p>
 
@@ -63,11 +64,19 @@
               placeholder="••••••"
             />
           </div>
+          <p class="otp-resend">
+            <span>{{ t('noCode') }}</span>
+            <button
+              class="otp-resend-btn"
+              type="button"
+              :disabled="resending || !canResend"
+              @click="resendOtp"
+            >
+              {{ canResend ? t('resend') : t('resendIn', { time: clock }) }}
+            </button>
+          </p>
           <button class="btn primary submit" type="button" :disabled="loading || otpCode.length < 6" @click="verifyOtp">
             {{ loading ? t('loading') : t('verifyLogin') }}
-          </button>
-          <button class="btn soft submit" type="button" :disabled="loading" @click="resendOtp">
-            {{ t('resend') }}
           </button>
           <button class="linkish" type="button" @click="backToForm">{{ t('back') }}</button>
         </div>
@@ -83,14 +92,18 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import SiteNav from '../components/SiteNav.vue'
 import AuthAside from '../components/AuthAside.vue'
 import { api } from '../api'
 import { useLanding } from '../composables/useLanding'
 import { handoffToDashboard, useAuthCopy } from '../composables/useAuth'
+import { useOtpResend } from '../composables/useOtpResend'
 
 const { locale, dashboardUrl } = useLanding()
 const { t } = useAuthCopy(locale)
+const route = useRoute()
+const sessionNotice = computed(() => (route.query.session === 'expired' ? t('sessionExpired') : ''))
 
 const email = ref('')
 const password = ref('')
@@ -104,6 +117,8 @@ const challengeId = ref('')
 const maskedPhone = ref('')
 const otpCode = ref('')
 const devCode = ref('')
+const resending = ref(false)
+const { canResend, clock, startCooldown, resetCooldown } = useOtpResend()
 
 const loginOtpBanner = computed(() => {
   if (needPhone.value && needEmailChannel.value) return t('loginBothRequired')
@@ -128,6 +143,7 @@ function backToForm() {
   error.value = ''
   otpCode.value = ''
   devCode.value = ''
+  resetCooldown()
 }
 
 async function submit() {
@@ -160,6 +176,7 @@ async function sendOtp() {
   devCode.value = data.devCode || ''
   otpCode.value = data.devCode || ''
   step.value = 'otp'
+  startCooldown()
 }
 
 async function verifyOtp() {
@@ -178,14 +195,15 @@ async function verifyOtp() {
 }
 
 async function resendOtp() {
+  if (!canResend.value || resending.value) return
   error.value = ''
-  loading.value = true
+  resending.value = true
   try {
     await sendOtp()
   } catch (e) {
     error.value = e.response?.data?.message || t('otpFail')
   } finally {
-    loading.value = false
+    resending.value = false
   }
 }
 </script>

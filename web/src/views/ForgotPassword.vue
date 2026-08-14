@@ -14,7 +14,7 @@
         <p v-if="error" class="error" role="alert">{{ error }}</p>
         <p v-if="devCode" class="dev">DEV: {{ devCode }}</p>
 
-        <form v-if="step === 'phone'" @submit.prevent="sendOtp">
+        <form v-if="step === 'phone'" @submit.prevent="sendOtp()">
           <div class="field">
             <label for="forgot-phone">{{ t('phone') }}</label>
             <input
@@ -46,6 +46,17 @@
               required
             />
           </div>
+          <p class="otp-resend">
+            <span>{{ t('noCode') }}</span>
+            <button
+              class="otp-resend-btn"
+              type="button"
+              :disabled="resending || !canResend"
+              @click="resendOtp"
+            >
+              {{ canResend ? t('resend') : t('resendIn', { time: clock }) }}
+            </button>
+          </p>
           <div class="field">
             <label for="forgot-pass">{{ t('newPassword') }}</label>
             <input
@@ -72,9 +83,6 @@
           <button class="btn primary submit" type="submit" :disabled="loading || otpCode.length < 6">
             {{ loading ? t('loading') : t('saveNewPassword') }}
           </button>
-          <button class="btn soft submit" type="button" :disabled="loading" @click="sendOtp">
-            {{ t('resend') }}
-          </button>
           <button class="linkish" type="button" @click="backToPhone">{{ t('changePhone') }}</button>
         </form>
 
@@ -95,6 +103,7 @@ import AuthAside from '../components/AuthAside.vue'
 import { api } from '../api'
 import { useLanding } from '../composables/useLanding'
 import { handoffToDashboard, useAuthCopy } from '../composables/useAuth'
+import { useOtpResend } from '../composables/useOtpResend'
 
 const { locale, dashboardUrl } = useLanding()
 const { t } = useAuthCopy(locale)
@@ -109,6 +118,8 @@ const maskedPhone = ref('')
 const devCode = ref('')
 const error = ref('')
 const loading = ref(false)
+const resending = ref(false)
+const { canResend, clock, startCooldown, resetCooldown } = useOtpResend()
 
 const heading = computed(() => (step.value === 'phone' ? t('forgotTitle') : t('resetTitle')))
 const subheading = computed(() =>
@@ -121,15 +132,26 @@ function backToPhone() {
   otpCode.value = ''
   newPassword.value = ''
   confirmPassword.value = ''
+  resetCooldown()
 }
 
-async function sendOtp() {
+async function resendOtp() {
+  if (!canResend.value || resending.value) return
+  resending.value = true
+  try {
+    await sendOtp({ silent: true })
+  } finally {
+    resending.value = false
+  }
+}
+
+async function sendOtp({ silent = false } = {}) {
   error.value = ''
   if (!phone.value.trim()) {
     error.value = t('phoneRequired')
     return
   }
-  loading.value = true
+  if (!silent) loading.value = true
   try {
     const { data } = await api.post('/api/auth/forgot-password/send-otp', {
       phone: phone.value.trim()
@@ -139,10 +161,11 @@ async function sendOtp() {
     devCode.value = data.devCode || ''
     otpCode.value = data.devCode || ''
     step.value = 'reset'
+    startCooldown()
   } catch (e) {
     error.value = e.response?.data?.message || t('forgotFail')
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
 }
 
