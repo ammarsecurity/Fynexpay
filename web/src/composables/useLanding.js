@@ -4,6 +4,29 @@ const apiUrl = import.meta.env.VITE_API_BASE || 'http://localhost:5080'
 const content = ref(null)
 const loaded = ref(false)
 
+function unescapeUnicode(value) {
+  if (typeof value !== 'string' || !value.includes('\\u')) return value
+  let current = value
+  for (let i = 0; i < 5 && current.includes('\\u'); i++) {
+    const next = current.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) =>
+      String.fromCharCode(parseInt(hex, 16)))
+    if (next === current) break
+    current = next
+  }
+  return current
+}
+
+function decodeEscapedTree(value) {
+  if (typeof value === 'string') return unescapeUnicode(value)
+  if (Array.isArray(value)) return value.map(decodeEscapedTree)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nested]) => [key, decodeEscapedTree(nested)])
+    )
+  }
+  return value
+}
+
 const saved = localStorage.getItem('fx_web_locale')
 const locale = ref(saved === 'en' || saved === 'ar' ? saved : 'ar')
 
@@ -24,10 +47,10 @@ async function ensureContent() {
     const res = await fetch(`${apiUrl}/api/landing`)
     if (!res.ok) throw new Error('landing')
     const data = await res.json()
-    content.value = {
+    content.value = decodeEscapedTree({
       ar: data.ar || data.Ar,
       en: data.en || data.En
-    }
+    })
   } catch {
     content.value = null
   } finally {

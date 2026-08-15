@@ -27,21 +27,22 @@
 .auth-aside {
   position: relative;
   padding: 40px 32px;
-  background: #0b1220;
-  color: #fff;
+  background: #f8fafc;
+  color: #0f172a;
   display: flex;
   flex-direction: column;
   justify-content: center;
   min-height: 100%;
   overflow: hidden;
+  border-inline-end: 1px solid #e2e8f0;
 }
 .auth-aside::before {
   content: "";
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(420px 240px at 0% 0%, rgba(29, 78, 216, 0.42), transparent 70%),
-    radial-gradient(360px 220px at 100% 100%, rgba(255, 255, 255, 0.08), transparent 62%);
+    radial-gradient(420px 240px at 0% 0%, rgba(99, 102, 241, 0.12), transparent 70%),
+    radial-gradient(360px 220px at 100% 100%, rgba(99, 102, 241, 0.06), transparent 62%);
   pointer-events: none;
 }
 .auth-aside > * { position: relative; z-index: 1; }
@@ -50,7 +51,6 @@
   width: auto;
   max-width: 140px;
   object-fit: contain;
-  filter: brightness(0) invert(1);
   margin-bottom: 28px;
 }
 .auth-aside h1 {
@@ -59,10 +59,11 @@
   line-height: 1.3;
   letter-spacing: -0.03em;
   font-weight: 800;
+  color: #0f172a;
 }
 .auth-aside p {
   margin: 0 0 28px;
-  color: rgba(255, 255, 255, 0.72);
+  color: #64748b;
   line-height: 1.8;
   font-size: 0.98rem;
   max-width: 32ch;
@@ -77,7 +78,7 @@
 .aside-points li {
   position: relative;
   padding-inline-start: 28px;
-  color: rgba(255, 255, 255, 0.92);
+  color: #334155;
   font-weight: 700;
   font-size: 0.92rem;
   line-height: 1.5;
@@ -91,9 +92,9 @@
   height: 18px;
   border-radius: 50%;
   background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2.4'%3E%3Cpath d='M5 12.5l4.2 4.2L19 7'/%3E%3C/svg%3E")
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236366F1' stroke-width='2.4'%3E%3Cpath d='M5 12.5l4.2 4.2L19 7'/%3E%3C/svg%3E")
     center / 12px no-repeat,
-    rgba(255, 255, 255, 0.14);
+    #eef2ff;
 }
 
 .auth-card {
@@ -291,6 +292,43 @@
   font-weight: 700;
   cursor: pointer;
 }
+.auth-pending { text-align: center; padding: 4px 0; }
+.auth-pending-ico {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 20px;
+  border-radius: 50%;
+  background: #eef2ff;
+  color: #6366f1;
+  display: grid;
+  place-items: center;
+  font-size: 1.55rem;
+}
+.auth-pending h2 {
+  margin: 0 0 8px;
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #0f172a;
+  line-height: 1.3;
+}
+.auth-pending .lead {
+  margin: 0 0 10px;
+  color: #334155;
+  font-weight: 800;
+  font-size: 0.98rem;
+}
+.auth-pending .body {
+  margin: 0 0 24px;
+  color: #64748b;
+  line-height: 1.85;
+  font-size: 0.95rem;
+}
+.auth-pending-actions {
+  display: grid;
+  gap: 10px;
+}
+.auth-pending-actions .submit { margin-top: 0; }
 
 @media (max-width: 900px) {
   .auth-page { padding: 24px 16px 48px; align-items: flex-start; }
@@ -302,6 +340,8 @@
   .auth-aside {
     padding: 24px 22px;
     min-height: 0;
+    border-inline-end: 0;
+    border-bottom: 1px solid #e2e8f0;
   }
   .aside-logo { margin-bottom: 16px; }
   .auth-aside h1 { font-size: 1.4rem; }

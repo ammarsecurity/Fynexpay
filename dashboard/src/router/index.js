@@ -41,21 +41,18 @@ const router = createRouter({
   routes
 })
 
-const pendingMerchantAllowed = new Set([
-  'merchant-overview',
-  'merchant-platforms',
-  'merchant-docs',
-  'merchant-methods',
-  'merchant-payments',
-  'merchant-test',
-  'merchant-profile',
-  'home'
-])
-
 router.beforeEach((to) => {
   const auth = useAuthStore()
   const expired = !!(auth.token && isJwtExpired(auth.token))
   if (expired) auth.logout()
+
+  const status = String(auth.user?.merchantStatus || '')
+  if (auth.isMerchant && status && status !== 'Active' && to.name !== 'auth-handoff') {
+    auth.logout()
+    const web = (import.meta.env.VITE_WEB_URL || 'https://fynexpay.net').replace(/\/$/, '')
+    window.location.replace(`${web}/login?pending=1`)
+    return false
+  }
 
   if (to.meta.auth && !auth.isAuthenticated) {
     return expired ? { path: '/login', query: { session: 'expired' } } : '/login'
@@ -63,17 +60,6 @@ router.beforeEach((to) => {
   if (to.meta.guest && auth.isAuthenticated && to.name !== 'auth-handoff') return '/'
   if (to.meta.admin && !auth.isAdmin) return '/merchant'
   if (to.meta.merchant && !auth.isMerchant) return '/admin'
-
-  const status = auth.user?.merchantStatus
-  if (
-    auth.isMerchant &&
-    status &&
-    status !== 'Active' &&
-    to.meta.merchant &&
-    !pendingMerchantAllowed.has(String(to.name || ''))
-  ) {
-    return { name: 'merchant-overview' }
-  }
 
   return true
 })

@@ -736,7 +736,7 @@ export default {
     responseTitle: 'Sample response',
     checkoutHint: 'Redirect the customer to checkoutUrl to choose a payment method.',
     statusTitle: '2) Payment status',
-    statusHint: 'Always verify on the server before fulfillment.',
+    statusHint: 'Always verify on the server before fulfillment. For browser calls send Origin matching the platform domain.',
     webhookTitle: '3) Webhook',
     webhookHint: 'POST to callbackUrl with an HMAC signature.',
     copySecret: 'Copy secret',

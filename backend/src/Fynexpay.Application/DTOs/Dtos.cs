@@ -33,7 +33,8 @@ public record AuthResponse(
     string FullName,
     string Role,
     Guid? MerchantId,
-    string? MerchantStatus);
+    string? MerchantStatus,
+    bool PendingActivation = false);
 
 public record UserProfileDto(
     Guid UserId,

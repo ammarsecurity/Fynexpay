@@ -118,9 +118,9 @@ public static class LegalContentDefaults
         Company = new CompanyPageDto
         {
             Nav = "الشركة",
-            Title = "مدفوعات موثوقة صُممت للعراق.",
-            Updated = "كيان تشغيلي لمنصة تجميع الدفع Fynexpay.",
-            Intro = "هذه الصفحة تعرّف التاجر من يقف وراء صفحة الدفع. حدّث البيانات القانونية من لوحة الإدارة عند اكتمال التسجيل الرسمي.",
+            Title = "منصة متاجر إلكترونية صُممت للعراق.",
+            Updated = "كيان تشغيلي لمنصة متاجر FynexPay.",
+            Intro = "هذه الصفحة تعرّف التاجر من يقف وراء متجر FynexPay. الدفع مدمج داخل متاجر المنصة وليس بوابة مستقلة. حدّث البيانات القانونية من لوحة الإدارة عند اكتمال التسجيل الرسمي.",
             RegistrationTitle = "التسجيل",
             IraqTitle = "العراق",
             IraqLegalNameLabel = "الكيان القانوني",
@@ -139,7 +139,7 @@ public static class LegalContentDefaults
             ],
             ContactTitle = "تواصل الشركة",
             ContactEmail = "hello@fynexpay.net",
-            ContactPhone = "+964 770 000 0000",
+            ContactPhone = "07809726258",
             ContactWebsite = "https://fynexpay.net",
             Disclaimer = "موقع Fynexpay وأي محتوى فيه غير معتمد أو مرتبط مباشرة بأي مؤسسة مالية ما لم يُذكر خلاف ذلك صراحة. جميع أسماء المزودين والشعارات المذكورة ملك لأصحابها."
         }
@@ -261,9 +261,9 @@ public static class LegalContentDefaults
         Company = new CompanyPageDto
         {
             Nav = "Company",
-            Title = "Reliable payments, built for Iraq.",
-            Updated = "Operating entity for the Fynexpay payment hub.",
-            Intro = "This page tells merchants who stands behind checkout. Update official registry details from the admin panel when registration is complete.",
+            Title = "An e-commerce store platform, built for Iraq.",
+            Updated = "Operating entity for the FynexPay store platform.",
+            Intro = "This page tells merchants who stands behind FynexPay stores. Checkout is built into platform stores, not offered as a standalone gateway. Update official registry details from the admin panel when registration is complete.",
             RegistrationTitle = "Registration",
             IraqTitle = "Iraq",
             IraqLegalNameLabel = "Legal entity",
@@ -282,7 +282,7 @@ public static class LegalContentDefaults
             ],
             ContactTitle = "Company contact",
             ContactEmail = "hello@fynexpay.net",
-            ContactPhone = "+964 770 000 0000",
+            ContactPhone = "07809726258",
             ContactWebsite = "https://fynexpay.net",
             Disclaimer = "The Fynexpay website and its content are not endorsed by or affiliated with any financial institution unless explicitly stated. Provider names and logos remain the property of their owners."
         }

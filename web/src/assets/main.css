@@ -12,20 +12,26 @@
   --shadow: 0 24px 60px rgba(3, 24, 56, 0.1);
   --shadow-sm: 0 10px 30px rgba(3, 24, 56, 0.06);
   --radius: 18px;
-  --font: "Tajawal", "Plus Jakarta Sans", sans-serif;
-  --font-en: "Plus Jakarta Sans", "Tajawal", sans-serif;
+  --font: "Cairo", "Plus Jakarta Sans", sans-serif;
+  --font-en: "Plus Jakarta Sans", "Cairo", sans-serif;
 }
 
 * { box-sizing: border-box; }
 html { direction: rtl; scroll-behavior: smooth; }
 html[dir="ltr"] { direction: ltr; }
+html, body, #app { min-height: 100%; }
 body {
   margin: 0;
   font-family: var(--font);
   color: var(--ink);
   background: var(--bg);
-  min-height: 100vh;
 }
+#app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+#app > main { flex: 1 0 auto; }
 html[dir="ltr"] body { font-family: var(--font-en); }
 a { color: inherit; text-decoration: none; }
 button { font: inherit; cursor: pointer; }
@@ -186,15 +192,8 @@ button { font: inherit; cursor: pointer; }
   width: var(--nav-ctrl-h, 40px);
   min-width: var(--nav-ctrl-h, 40px);
   padding: 0;
-  flex-direction: column;
-  gap: 4px;
-}
-.menu-toggle span {
-  display: block;
-  width: 16px;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--brand);
+  font-size: 1.15rem;
+  color: var(--brand);
 }
 .mobile-sheet { display: none; }
 .desktop-only { display: flex; }
@@ -629,8 +628,9 @@ html[dir="ltr"] .btn.cta-primary svg { transform: none; }
 }
 .site-footer .foot-brand {
   display: flex;
-  align-items: center;
-  gap: 14px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
 }
 .site-footer .foot-brand img { height: 26px; }
 .site-footer .foot-brand p {

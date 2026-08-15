@@ -3,7 +3,7 @@ const copy = {
     loginTitle: 'تسجيل الدخول',
     loginSub: 'ادخل إلى لوحة التاجر أو الإدارة',
     registerTitle: 'إنشاء حساب تاجر',
-    registerSub: 'سجّل متجرك وابدأ قبول المدفوعات خلال دقائق',
+    registerSub: 'سجّل متجرك على FynexPay وابدأ البيع خلال دقائق',
     email: 'البريد الإلكتروني',
     password: 'كلمة المرور',
     forgotPassword: 'نسيت كلمة السر؟',
@@ -59,9 +59,9 @@ const copy = {
     emailRequired: 'يتطلب التسجيل تأكيد البريد',
     bothRequired: 'يتطلب التسجيل تأكيد الواتساب أو البريد',
     sideLoginTitle: 'مرحباً بعودتك',
-    sideLoginBody: 'إدارة المدفوعات والمحفظة والتقارير من لوحة واحدة.',
+    sideLoginBody: 'إدارة متجرك وطلباتك ومحفظتك من لوحة واحدة.',
     sideRegisterTitle: 'ابدأ مع Fynexpay',
-    sideRegisterBody: 'اربط متجرك بـ API موحّد وامنح زبائنك تجربة دفع سلسة.',
+    sideRegisterBody: 'افتح متجرك على FynexPay وامنح زبائنك طلباً ودفعاً من داخله.',
     pointSecure: 'حماية وتشفير للبيانات',
     pointWallet: 'محفظة وصافي فوري',
     pointFast: 'تفعيل سريع للتاجر',
@@ -72,13 +72,21 @@ const copy = {
     otpStep: 'الخطوة 2 من 2',
     sideForgotTitle: 'استعادة آمنة',
     sideForgotBody: 'نرسل رمز التحقق إلى واتساب المسجّل ثم تعيّن كلمة سر جديدة.',
-    backHome: 'العودة للرئيسية'
+    backHome: 'العودة للرئيسية',
+    pendingTitle: 'تم استلام طلبك',
+    pendingLead: 'حسابك بانتظار موافقة الإدارة',
+    pendingBody: 'سيتواصل معك فريق المبيعات قريباً لتفعيل متجرك على FynexPay. لن تتمكن من دخول لوحة التحكم حتى يُعتمد الحساب.',
+    pendingLoginTitle: 'حسابك قيد المراجعة',
+    pendingLoginLead: 'لم يُفعَّل حساب التاجر بعد',
+    pendingLoginBody: 'سيتواصل معك فريق المبيعات لتفعيل الحساب. بعد موافقة الإدارة يمكنك تسجيل الدخول إلى اللوحة.',
+    pendingHome: 'العودة للرئيسية',
+    pendingContact: 'تواصل معنا'
   },
   en: {
     loginTitle: 'Sign in',
     loginSub: 'Access the merchant or admin dashboard',
     registerTitle: 'Create merchant account',
-    registerSub: 'Register your store and start accepting payments in minutes',
+    registerSub: 'Register your FynexPay store and start selling in minutes',
     email: 'Email',
     password: 'Password',
     forgotPassword: 'Forgot password?',
@@ -134,9 +142,9 @@ const copy = {
     emailRequired: 'Registration requires email verification',
     bothRequired: 'Registration requires WhatsApp or email verification',
     sideLoginTitle: 'Welcome back',
-    sideLoginBody: 'Manage payments, wallet, and reports from one dashboard.',
+    sideLoginBody: 'Manage your store, orders, and wallet from one dashboard.',
     sideRegisterTitle: 'Start with Fynexpay',
-    sideRegisterBody: 'Connect your store with one API and give customers a smooth checkout.',
+    sideRegisterBody: 'Open your FynexPay store and let customers order and pay inside it.',
     pointSecure: 'Data protection & encryption',
     pointWallet: 'Wallet with instant net credit',
     pointFast: 'Fast merchant activation',
@@ -147,7 +155,15 @@ const copy = {
     otpStep: 'Step 2 of 2',
     sideForgotTitle: 'Secure recovery',
     sideForgotBody: 'We send a code to the registered WhatsApp number, then you set a new password.',
-    backHome: 'Back to home'
+    backHome: 'Back to home',
+    pendingTitle: 'We received your request',
+    pendingLead: 'Your account is awaiting admin approval',
+    pendingBody: 'Our sales team will contact you shortly to activate your FynexPay store. You will not be able to access the dashboard until the account is approved.',
+    pendingLoginTitle: 'Your account is under review',
+    pendingLoginLead: 'This merchant account is not active yet',
+    pendingLoginBody: 'Our sales team will contact you to activate the account. After admin approval you can sign in to the dashboard.',
+    pendingHome: 'Back to home',
+    pendingContact: 'Contact us'
   }
 }
 
@@ -162,6 +178,21 @@ export function useAuthCopy(localeRef) {
       return text
     }
   }
+}
+
+export function isPendingActivation(data) {
+  if (!data) return false
+  if (data.pendingActivation) return true
+  const status = String(data.merchantStatus || data.user?.merchantStatus || '')
+  return status.toLowerCase() === 'pending'
+}
+
+export function completeAuth(dashboardUrl, data, onPending) {
+  if (isPendingActivation(data)) {
+    onPending?.()
+    return
+  }
+  handoffToDashboard(dashboardUrl, data)
 }
 
 export function handoffToDashboard(dashboardUrl, data) {

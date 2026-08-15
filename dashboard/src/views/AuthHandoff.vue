@@ -18,7 +18,12 @@ onMounted(() => {
     const raw = (window.location.hash || '').replace(/^#/, '')
     if (!raw) throw new Error('missing')
     const data = JSON.parse(decodeURIComponent(escape(atob(raw))))
-    if (!data?.token) throw new Error('token')
+    const status = String(data.user?.merchantStatus || '')
+    if (!data?.token || status.toLowerCase() === 'pending') {
+      const web = (import.meta.env.VITE_WEB_URL || 'https://fynexpay.net').replace(/\/$/, '')
+      window.location.replace(`${web}/login?pending=1`)
+      return
+    }
     auth.applyAuth({
       token: data.token,
       userId: data.user?.userId,

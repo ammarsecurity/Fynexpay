@@ -6,7 +6,14 @@
       <AuthAside :title="t('sideRegisterTitle')" :body="t('sideRegisterBody')" :t="t" />
 
       <section class="auth-card">
-        <div class="card-head">
+        <AuthPending
+          v-if="pending"
+          :title="t('pendingTitle')"
+          :lead="t('pendingLead')"
+          :body="t('pendingBody')"
+          :t="t"
+        />
+        <div class="card-head" v-else>
           <p class="step-label" v-if="requireOtp">
             {{ step === 'otp' ? t('otpStep') : t('formStep') }}
           </p>
@@ -16,6 +23,7 @@
           </p>
         </div>
 
+        <template v-if="!pending">
         <div v-if="requireOtp && step === 'form'" class="banner">{{ otpBanner }}</div>
         <p v-if="error" class="error" role="alert">{{ error }}</p>
         <p v-if="devCode" class="dev">DEV: {{ devCode }}</p>
@@ -104,6 +112,7 @@
           {{ t('hasAccount') }}
           <RouterLink to="/login">{{ t('loginLink') }}</RouterLink>
         </p>
+        </template>
       </section>
     </div>
   </main>
@@ -113,15 +122,17 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import SiteNav from '../components/SiteNav.vue'
 import AuthAside from '../components/AuthAside.vue'
+import AuthPending from '../components/AuthPending.vue'
 import { api } from '../api'
 import { useLanding } from '../composables/useLanding'
-import { handoffToDashboard, useAuthCopy } from '../composables/useAuth'
+import { completeAuth, useAuthCopy } from '../composables/useAuth'
 import { useOtpResend } from '../composables/useOtpResend'
 
 const { locale, dashboardUrl } = useLanding()
 const { t } = useAuthCopy(locale)
 
 const error = ref('')
+const pending = ref(false)
 const loading = ref(false)
 const requireOtp = ref(false)
 const needPhone = ref(true)
@@ -169,7 +180,8 @@ async function submitForm() {
   try {
     if (!requireOtp.value) {
       const { data } = await api.post('/api/auth/register', { ...form })
-      handoffToDashboard(dashboardUrl, data)
+      completeAuth(dashboardUrl, data, () => { pending.value = true })
+      loading.value = false
       return
     }
     const { data } = await api.post('/api/auth/register/send-otp', { ...form })
@@ -194,7 +206,8 @@ async function verifyOtp() {
       challengeId: challengeId.value,
       code: otpCode.value
     })
-    handoffToDashboard(dashboardUrl, data)
+    completeAuth(dashboardUrl, data, () => { pending.value = true })
+    loading.value = false
   } catch (e) {
     error.value = e.response?.data?.message || t('otpFail')
     loading.value = false

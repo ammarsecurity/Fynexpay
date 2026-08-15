@@ -254,10 +254,33 @@ function syncPills() {
     .filter(Boolean)
 }
 
+function unescapeUnicode(value) {
+  if (typeof value !== 'string' || !value.includes('\\u')) return value
+  let current = value
+  for (let i = 0; i < 5 && current.includes('\\u'); i++) {
+    const next = current.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) =>
+      String.fromCharCode(parseInt(hex, 16)))
+    if (next === current) break
+    current = next
+  }
+  return current
+}
+
+function decodeEscapedTree(value) {
+  if (typeof value === 'string') return unescapeUnicode(value)
+  if (Array.isArray(value)) return value.map(decodeEscapedTree)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nested]) => [key, decodeEscapedTree(nested)])
+    )
+  }
+  return value
+}
+
 async function load() {
   error.value = ''
   const { data } = await api.get('/api/admin/landing')
-  content.value = data
+  content.value = decodeEscapedTree(data)
 }
 
 async function save() {

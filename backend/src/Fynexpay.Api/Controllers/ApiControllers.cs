@@ -1104,6 +1104,7 @@ public class LandingController : ControllerBase
     public LandingController(LandingContentService landing) => _landing = landing;
 
     [HttpGet]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public async Task<ActionResult<LandingContentDto>> Get(CancellationToken ct)
         => Ok(await _landing.GetAsync(ct));
 }

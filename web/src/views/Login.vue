@@ -6,7 +6,14 @@
       <AuthAside :title="t('sideLoginTitle')" :body="t('sideLoginBody')" :t="t" />
 
       <section class="auth-card">
-        <div class="card-head">
+        <AuthPending
+          v-if="pending"
+          :title="t('pendingLoginTitle')"
+          :lead="t('pendingLoginLead')"
+          :body="t('pendingLoginBody')"
+          :t="t"
+        />
+        <div class="card-head" v-else>
           <p class="step-label" v-if="requireOtp">
             {{ step === 'otp' ? t('otpStep') : t('formStep') }}
           </p>
@@ -16,6 +23,7 @@
           </p>
         </div>
 
+        <template v-if="!pending">
         <div v-if="requireOtp && step === 'form'" class="banner">{{ loginOtpBanner }}</div>
         <p v-if="sessionNotice" class="error" role="status">{{ sessionNotice }}</p>
         <p v-if="error" class="error" role="alert">{{ error }}</p>
@@ -85,6 +93,7 @@
           {{ t('noAccount') }}
           <RouterLink to="/register">{{ t('registerLink') }}</RouterLink>
         </p>
+        </template>
       </section>
     </div>
   </main>
@@ -95,9 +104,10 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import SiteNav from '../components/SiteNav.vue'
 import AuthAside from '../components/AuthAside.vue'
+import AuthPending from '../components/AuthPending.vue'
 import { api } from '../api'
 import { useLanding } from '../composables/useLanding'
-import { handoffToDashboard, useAuthCopy } from '../composables/useAuth'
+import { completeAuth, useAuthCopy } from '../composables/useAuth'
 import { useOtpResend } from '../composables/useOtpResend'
 
 const { locale, dashboardUrl } = useLanding()
@@ -108,6 +118,7 @@ const sessionNotice = computed(() => (route.query.session === 'expired' ? t('ses
 const email = ref('')
 const password = ref('')
 const error = ref('')
+const pending = ref(route.query.pending === '1')
 const loading = ref(false)
 const requireOtp = ref(false)
 const needPhone = ref(true)
@@ -155,7 +166,7 @@ async function submit() {
         email: email.value,
         password: password.value
       })
-      handoffToDashboard(dashboardUrl, data)
+      completeAuth(dashboardUrl, data, () => { pending.value = true })
       return
     }
     await sendOtp()
@@ -187,7 +198,8 @@ async function verifyOtp() {
       challengeId: challengeId.value,
       code: otpCode.value
     })
-    handoffToDashboard(dashboardUrl, data)
+    completeAuth(dashboardUrl, data, () => { pending.value = true })
+    loading.value = false
   } catch (e) {
     error.value = e.response?.data?.message || t('otpFail')
     loading.value = false

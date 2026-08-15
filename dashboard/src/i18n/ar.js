@@ -736,7 +736,7 @@ export default {
     responseTitle: 'مثال الرد',
     checkoutHint: 'وجّه الزبون إلى checkoutUrl لاختيار طريقة الدفع.',
     statusTitle: '2) حالة الدفعة',
-    statusHint: 'تحقق دائماً من السيرفر قبل التسليم.',
+    statusHint: 'تحقق دائماً من السيرفر قبل التسليم. من المتصفح أرسل Origin ليطابق دومين المنصة.',
     webhookTitle: '3) Webhook',
     webhookHint: 'POST إلى callbackUrl مع توقيع HMAC.',
     copySecret: 'نسخ السر',

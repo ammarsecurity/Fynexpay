@@ -80,7 +80,11 @@ public sealed class MerchantApiExamplesFilter : ISchemaFilter, IOperationFilter
                  && string.Equals(context.ApiDescription.HttpMethod, "GET", StringComparison.OrdinalIgnoreCase))
         {
             operation.Summary = "حالة الدفعة";
-            operation.Description = "استعلام حالة دفعة بالمعرّف. يتطلب Bearer التاجر و X-Api-Key للمنصة.";
+            operation.Description =
+                "استعلام حالة دفعة بالمعرّف. يتطلب Bearer التاجر و X-Api-Key للمنصة.\n" +
+                "عند الاستدعاء من المتصفح أرسل `Origin` ليطابق دومين المنصة.";
+            operation.Parameters ??= new List<OpenApiParameter>();
+            EnsureHeader(operation, "Origin", "أصل المتصفح إن وُجد — مثال: https://shop.example.com", example: "https://shop.example.com");
         }
         else if (path.Contains("cancel", StringComparison.OrdinalIgnoreCase))
         {

@@ -6,11 +6,19 @@
       <AuthAside :title="t('sideForgotTitle')" :body="t('sideForgotBody')" :t="t" />
 
       <section class="auth-card">
-        <div class="card-head">
+        <AuthPending
+          v-if="pending"
+          :title="t('pendingLoginTitle')"
+          :lead="t('pendingLoginLead')"
+          :body="t('pendingLoginBody')"
+          :t="t"
+        />
+        <div class="card-head" v-else>
           <h2>{{ heading }}</h2>
           <p class="muted">{{ subheading }}</p>
         </div>
 
+        <template v-if="!pending">
         <p v-if="error" class="error" role="alert">{{ error }}</p>
         <p v-if="devCode" class="dev">DEV: {{ devCode }}</p>
 
@@ -91,6 +99,7 @@
           <RouterLink to="/login">{{ t('loginLink') }}</RouterLink>
         </p>
         <p class="secure">{{ t('secureNote') }}</p>
+        </template>
       </section>
     </div>
   </main>
@@ -102,7 +111,8 @@ import SiteNav from '../components/SiteNav.vue'
 import AuthAside from '../components/AuthAside.vue'
 import { api } from '../api'
 import { useLanding } from '../composables/useLanding'
-import { handoffToDashboard, useAuthCopy } from '../composables/useAuth'
+import AuthPending from '../components/AuthPending.vue'
+import { completeAuth, useAuthCopy } from '../composables/useAuth'
 import { useOtpResend } from '../composables/useOtpResend'
 
 const { locale, dashboardUrl } = useLanding()
@@ -117,6 +127,7 @@ const challengeId = ref('')
 const maskedPhone = ref('')
 const devCode = ref('')
 const error = ref('')
+const pending = ref(false)
 const loading = ref(false)
 const resending = ref(false)
 const { canResend, clock, startCooldown, resetCooldown } = useOtpResend()
@@ -186,7 +197,8 @@ async function resetPassword() {
       code: otpCode.value.trim(),
       newPassword: newPassword.value
     })
-    handoffToDashboard(dashboardUrl, data)
+    completeAuth(dashboardUrl, data, () => { pending.value = true })
+    loading.value = false
   } catch (e) {
     error.value = e.response?.data?.message || t('resetFail')
     loading.value = false

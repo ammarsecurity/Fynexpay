@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Threading.RateLimiting;
 using Fynexpay.Application;
 using Fynexpay.Api.Background;
@@ -13,7 +14,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
-builder.Services.AddControllers();
+builder.Services.AddControllers().AddJsonOptions(o =>
+{
+    o.JsonSerializerOptions.Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
+});
 builder.Services.AddHostedService<ExpiredCheckoutPurgeService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSingleton<ICorsPolicyProvider, DynamicCorsPolicyProvider>();

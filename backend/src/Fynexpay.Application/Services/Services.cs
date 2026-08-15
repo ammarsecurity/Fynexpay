@@ -155,8 +155,7 @@ public class AuthService
             new { merchantId = merchant.Id, businessName = merchant.BusinessName, email },
             ct);
 
-        var token = _jwt.CreateToken(user.Id, user.Email, user.Role.ToString(), merchant.Id, user.FullName);
-        return new AuthResponse(token, user.Id, user.Email, user.FullName, user.Role.ToString(), merchant.Id, merchant.Status.ToString());
+        return IssueAuth(user);
     }
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken ct = default)
@@ -214,8 +213,19 @@ public class AuthService
 
     private AuthResponse IssueAuth(User user)
     {
-        var token = _jwt.CreateToken(user.Id, user.Email, user.Role.ToString(), user.MerchantId, user.FullName);
-        return new AuthResponse(token, user.Id, user.Email, user.FullName, user.Role.ToString(), user.MerchantId, user.Merchant?.Status.ToString());
+        var pending = user.Merchant is { Status: not MerchantStatus.Active };
+        var token = pending
+            ? ""
+            : _jwt.CreateToken(user.Id, user.Email, user.Role.ToString(), user.MerchantId, user.FullName);
+        return new AuthResponse(
+            token,
+            user.Id,
+            user.Email,
+            user.FullName,
+            user.Role.ToString(),
+            user.MerchantId,
+            user.Merchant?.Status.ToString(),
+            pending);
     }
 
     private static bool LoginOtpRequired(UltramsgSettings s)
@@ -245,9 +255,7 @@ public class AuthService
         user.UpdatedAtUtc = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         await _otp.InvalidateChallengeAsync(request.ChallengeId, ct);
-
-        var token = _jwt.CreateToken(user.Id, user.Email, user.Role.ToString(), user.MerchantId, user.FullName);
-        return new AuthResponse(token, user.Id, user.Email, user.FullName, user.Role.ToString(), user.MerchantId, user.Merchant?.Status.ToString());
+        return IssueAuth(user);
     }
 }
 

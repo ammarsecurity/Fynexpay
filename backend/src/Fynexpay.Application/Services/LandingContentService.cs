@@ -1,4 +1,8 @@
+using System.Collections;
+using System.Reflection;
+using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Fynexpay.Application.Abstractions;
 using Fynexpay.Application.DTOs;
 using Fynexpay.Domain.Entities;
@@ -12,8 +16,10 @@ public class LandingContentService
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false
+        WriteIndented = false,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
+    private static readonly Regex UnicodeEscape = new(@"\\u([0-9a-fA-F]{4})", RegexOptions.Compiled);
 
     private readonly IAppDbContext _db;
     private LandingContentDto? _cache;
@@ -44,8 +50,9 @@ public class LandingContentService
         var missingHeroAccent = string.IsNullOrWhiteSpace(content.Ar?.HeroAccent)
                                 || string.IsNullOrWhiteSpace(content.En?.HeroAccent);
         content = MergeWithDefaults(content);
+        var decodedUnicode = DecodeEscapedUnicode(content);
         var refreshedHero = RefreshStaleHeroCopy(content);
-        if (missingLegal || missingFooterNotes || missingHeroAccent || refreshedHero || ScrubProviderBrandNames(content))
+        if (missingLegal || missingFooterNotes || missingHeroAccent || decodedUnicode || refreshedHero || ScrubProviderBrandNames(content))
             await PersistAsync(content, ct);
         _cache = content;
         return Clone(content);
@@ -53,6 +60,7 @@ public class LandingContentService
 
     public async Task<LandingContentDto> SaveAsync(LandingContentDto content, CancellationToken ct = default)
     {
+        DecodeEscapedUnicode(content);
         content = MergeWithDefaults(content);
         ScrubProviderBrandNames(content);
         await PersistAsync(content, ct);
@@ -231,8 +239,41 @@ public class LandingContentService
     private static bool RefreshLocaleHero(LandingLocaleDto src, LandingLocaleDto fallback)
     {
         var changed = false;
-        if (IsStaleBadge(src.Badge)) { src.Badge = fallback.Badge; changed = true; }
+        if (IsStaleBadge(src.Badge) || LooksLikePaymentPlatform(src.Badge)) { src.Badge = fallback.Badge; changed = true; }
         if (IsStaleCta(src.CtaMerchant)) { src.CtaMerchant = fallback.CtaMerchant; changed = true; }
+        if (IsStaleHero(src.HeroTitle) || IsStaleHero(src.Footer) || LooksLikePaymentPlatform(src.HeroTitle)
+            || LooksLikePaymentPlatform(src.HeroSubtitle) || LooksLikePaymentPlatform(src.Footer))
+        {
+            src.HeroTitle = fallback.HeroTitle;
+            src.HeroBefore = fallback.HeroBefore;
+            src.HeroAccent = fallback.HeroAccent;
+            src.HeroAfter = fallback.HeroAfter;
+            src.HeroSubtitle = fallback.HeroSubtitle;
+            src.Footer = fallback.Footer;
+            changed = true;
+        }
+        if (LooksLikePaymentPlatform(src.FeaturesTitle) || LooksLikePaymentPlatform(src.FeaturesSubtitle))
+        {
+            src.FeaturesTitle = fallback.FeaturesTitle;
+            src.FeaturesSubtitle = fallback.FeaturesSubtitle;
+            changed = true;
+        }
+        if (LooksLikePaymentPlatform(src.CtaTitle) || LooksLikePaymentPlatform(src.CtaSubtitle))
+        {
+            src.CtaTitle = fallback.CtaTitle;
+            src.CtaSubtitle = fallback.CtaSubtitle;
+            changed = true;
+        }
+        if (LooksLikePaymentPlatform(src.ContactSubtitle)) { src.ContactSubtitle = fallback.ContactSubtitle; changed = true; }
+        if (src.Legal?.Company != null && (
+            LooksLikePaymentPlatform(src.Legal.Company.Title) || LooksLikePaymentPlatform(src.Legal.Company.Intro)
+            || LooksLikePaymentPlatform(src.Legal.Company.Updated)))
+        {
+            src.Legal.Company.Title = fallback.Legal.Company.Title;
+            src.Legal.Company.Updated = fallback.Legal.Company.Updated;
+            src.Legal.Company.Intro = fallback.Legal.Company.Intro;
+            changed = true;
+        }
         if (string.IsNullOrWhiteSpace(src.HeroBefore)) { src.HeroBefore = fallback.HeroBefore; changed = true; }
         if (string.IsNullOrWhiteSpace(src.HeroAccent)) { src.HeroAccent = fallback.HeroAccent; changed = true; }
         if (string.IsNullOrWhiteSpace(src.HeroAfter)) { src.HeroAfter = fallback.HeroAfter; changed = true; }
@@ -249,6 +290,41 @@ public class LandingContentService
         !string.IsNullOrWhiteSpace(cta) && (
             cta.Contains("ابدأ كتاجر", StringComparison.Ordinal)
             || cta.Contains("Start as merchant", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsStaleHero(string? title) =>
+        !string.IsNullOrWhiteSpace(title) && (
+            title.Contains("Payment Gateway", StringComparison.OrdinalIgnoreCase)
+            || title.Contains("بوابة دفع", StringComparison.Ordinal)
+            || title.Contains("محطة دفع واحدة", StringComparison.Ordinal)
+            || title.Contains("One payment hub", StringComparison.OrdinalIgnoreCase));
+
+    private static bool LooksLikePaymentPlatform(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        if (text.Contains("منصة متاجر", StringComparison.Ordinal)
+            || text.Contains("ليست بوابة", StringComparison.Ordinal)
+            || text.Contains("e-commerce store platform", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("built into FynexPay", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("not a standalone", StringComparison.OrdinalIgnoreCase))
+            return false;
+        return text.Contains("بنية مدفوعات", StringComparison.Ordinal)
+            || text.Contains("منصة دفع", StringComparison.Ordinal)
+            || text.Contains("بوابة دفع", StringComparison.Ordinal)
+            || text.Contains("مدفوعات موثوقة", StringComparison.Ordinal)
+            || text.Contains("تجميع الدفع", StringComparison.Ordinal)
+            || text.Contains("من يقف وراء صفحة الدفع", StringComparison.Ordinal)
+            || text.Contains("استقبل مدفوعات", StringComparison.Ordinal)
+            || text.Contains("قبول المدفوعات", StringComparison.Ordinal)
+            || text.Contains("عن المدفوعات", StringComparison.Ordinal)
+            || text.Contains("Payment infrastructure", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("payment platform", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("payment gateway", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("payment hub", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("Reliable payments", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("who stands behind checkout", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("payment questions", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("accept payments", StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     /// Strip hardcoded PSP brand names from marketing copy (logos are shown instead).
@@ -313,6 +389,69 @@ public class LandingContentService
                || text.Contains("FIB Web", StringComparison.OrdinalIgnoreCase)
                || System.Text.RegularExpressions.Regex.IsMatch(text, @"\bFIB\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
                || System.Text.RegularExpressions.Regex.IsMatch(text, @"\bQI\b");
+    }
+
+    private static bool DecodeEscapedUnicode(object? obj)
+    {
+        if (obj is null) return false;
+        var changed = false;
+        if (obj is IList list)
+        {
+            for (var i = 0; i < list.Count; i++)
+            {
+                if (list[i] is string item)
+                {
+                    var decoded = UnescapeUnicode(item);
+                    if (decoded != item)
+                    {
+                        list[i] = decoded;
+                        changed = true;
+                    }
+                }
+                else
+                {
+                    changed |= DecodeEscapedUnicode(list[i]);
+                }
+            }
+            return changed;
+        }
+
+        var type = obj.GetType();
+        if (type.Namespace?.StartsWith("System", StringComparison.Ordinal) == true)
+            return false;
+
+        foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            if (!prop.CanRead || prop.GetIndexParameters().Length > 0) continue;
+            var val = prop.GetValue(obj);
+            if (val is string text)
+            {
+                if (!prop.CanWrite) continue;
+                var decoded = UnescapeUnicode(text);
+                if (decoded == text) continue;
+                prop.SetValue(obj, decoded);
+                changed = true;
+            }
+            else
+            {
+                changed |= DecodeEscapedUnicode(val);
+            }
+        }
+
+        return changed;
+    }
+
+    private static string UnescapeUnicode(string value)
+    {
+        var current = value;
+        for (var i = 0; i < 5 && current.Contains("\\u", StringComparison.Ordinal); i++)
+        {
+            var next = UnicodeEscape.Replace(current, m =>
+                char.ConvertFromUtf32(Convert.ToInt32(m.Groups[1].Value, 16)));
+            if (next == current) break;
+            current = next;
+        }
+        return current;
     }
 
     private static string Pick(string? value, string fallback) =>
