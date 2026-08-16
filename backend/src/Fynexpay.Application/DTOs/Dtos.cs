@@ -168,7 +168,10 @@ public record PaymentDto(
     string? FailureReason,
     string? ProviderRawResponse,
     IReadOnlyList<string>? AvailableProviders,
-    IReadOnlyList<PaymentEventDto>? Events = null);
+    IReadOnlyList<PaymentEventDto>? Events = null,
+    string? CustomerPhone = null,
+    string? CustomerEmail = null,
+    DateTime? CustomerPhoneVerifiedAtUtc = null);
 
 /// <summary>
 /// Lean payment payload for Merchant public API (/v1) and merchant webhooks.
@@ -186,7 +189,9 @@ public record PublicPaymentDto(
     DateTime CreatedAtUtc,
     DateTime? PaidAtUtc,
     DateTime? ExpiredAtUtc,
-    string? FailureReason);
+    string? FailureReason,
+    string? CustomerPhone = null,
+    bool CustomerPhoneVerified = false);
 
 public record MerchantPaymentMethodsDto(
     bool FibEnabled,

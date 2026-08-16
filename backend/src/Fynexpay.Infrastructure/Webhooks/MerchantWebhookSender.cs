@@ -58,7 +58,9 @@ public class MerchantWebhookSender : IMerchantWebhookSender
             createdAtUtc = payment.CreatedAtUtc,
             paidAtUtc = payment.PaidAtUtc,
             expiredAtUtc = payment.ExpiredAtUtc,
-            failureReason = payment.FailureReason
+            failureReason = payment.FailureReason,
+            customerPhone = payment.CustomerPhone,
+            customerPhoneVerified = payment.CustomerPhoneVerifiedAtUtc != null
         });
 
         var signature = ComputeHmac(payload, payment.Merchant.WebhookSecret);

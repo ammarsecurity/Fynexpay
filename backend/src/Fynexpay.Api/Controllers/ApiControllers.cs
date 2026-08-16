@@ -249,10 +249,13 @@ public class MerchantDashboardController : ControllerBase
         if (!string.IsNullOrWhiteSpace(q))
         {
             var term = q.Trim();
+            var digits = new string(term.Where(char.IsDigit).ToArray());
             query = query.Where(p =>
                 (p.MerchantOrderId != null && p.MerchantOrderId.Contains(term)) ||
                 (p.Description != null && p.Description.Contains(term)) ||
-                p.Id.ToString().Contains(term));
+                p.Id.ToString().Contains(term) ||
+                (p.CustomerPhone != null && (p.CustomerPhone.Contains(term) || (digits.Length >= 7 && p.CustomerPhone.Contains(digits)))) ||
+                (p.CustomerEmail != null && p.CustomerEmail.Contains(term)));
         }
 
         var total = await query.CountAsync(ct);
@@ -770,10 +773,13 @@ public class AdminController : ControllerBase
         if (!string.IsNullOrWhiteSpace(q))
         {
             var term = q.Trim();
+            var digits = new string(term.Where(char.IsDigit).ToArray());
             query = query.Where(p =>
                 (p.MerchantOrderId != null && p.MerchantOrderId.Contains(term)) ||
                 (p.Description != null && p.Description.Contains(term)) ||
-                p.Id.ToString().Contains(term));
+                p.Id.ToString().Contains(term) ||
+                (p.CustomerPhone != null && (p.CustomerPhone.Contains(term) || (digits.Length >= 7 && p.CustomerPhone.Contains(digits)))) ||
+                (p.CustomerEmail != null && p.CustomerEmail.Contains(term)));
         }
 
         var total = await query.CountAsync(ct);

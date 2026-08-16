@@ -991,7 +991,10 @@ public class PaymentService
             p.FailureReason,
             p.ProviderRawResponse,
             availableProviders,
-            events);
+            events,
+            p.CustomerPhone,
+            p.CustomerEmail,
+            p.CustomerPhoneVerifiedAtUtc);
     }
 
     public PublicPaymentDto MapPublic(Payment p) =>
@@ -1008,7 +1011,9 @@ public class PaymentService
             p.CreatedAtUtc,
             p.PaidAtUtc,
             p.ExpiredAtUtc,
-            p.FailureReason);
+            p.FailureReason,
+            p.CustomerPhone,
+            p.CustomerPhoneVerifiedAtUtc != null);
 
     public PublicPaymentDto ToPublic(PaymentDto dto) =>
         new(
@@ -1024,7 +1029,9 @@ public class PaymentService
             dto.CreatedAtUtc,
             dto.PaidAtUtc,
             dto.ExpiredAtUtc,
-            dto.FailureReason);
+            dto.FailureReason,
+            dto.CustomerPhone,
+            dto.CustomerPhoneVerifiedAtUtc != null);
 
     public async Task<PaymentDto?> GetDetailAsync(Guid paymentId, Guid? merchantId = null, CancellationToken ct = default)
     {

@@ -42,6 +42,40 @@
           </div>
 
           <div class="detail-card">
+            <h3>{{ $t('payments.sectionCustomer') }}</h3>
+            <dl>
+              <div>
+                <dt>{{ $t('payments.customerPhone') }}</dt>
+                <dd class="phone-row">
+                  <span class="ltr mono">{{ payment.customerPhone || '—' }}</span>
+                  <button
+                    v-if="payment.customerPhone"
+                    class="btn secondary copy-mini"
+                    type="button"
+                    @click="copy(payment.customerPhone)"
+                  >{{ $t('payments.copy') }}</button>
+                </dd>
+              </div>
+              <div>
+                <dt>{{ $t('common.status') }}</dt>
+                <dd>
+                  <span class="badge" :class="payment.customerPhoneVerifiedAtUtc ? 'ok' : 'warn'">
+                    {{ payment.customerPhoneVerifiedAtUtc ? $t('payments.customerVerified') : $t('payments.customerUnverified') }}
+                  </span>
+                </dd>
+              </div>
+              <div v-if="payment.customerPhoneVerifiedAtUtc">
+                <dt>{{ $t('payments.customerVerifiedAt') }}</dt>
+                <dd>{{ when(payment.customerPhoneVerifiedAtUtc) }}</dd>
+              </div>
+              <div v-if="payment.customerEmail">
+                <dt>{{ $t('payments.customerEmail') }}</dt>
+                <dd class="ltr">{{ payment.customerEmail }}</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div class="detail-card">
             <h3>{{ $t('payments.sectionMoney') }}</h3>
             <dl>
               <div><dt>{{ $t('common.amount') }}</dt><dd class="strong">{{ money(payment.amount) }}</dd></div>
@@ -313,6 +347,18 @@ dd.strong { color: var(--brand-secondary); font-size: 1.05rem; }
   margin-bottom: 8px;
 }
 .wrap { white-space: pre-wrap; word-break: break-all; }
+.phone-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ltr {
+  direction: ltr;
+  text-align: start;
+  unicode-bidi: isolate;
+}
+.copy-mini { padding: 4px 10px; font-size: 0.75rem; }
 @media (max-width: 900px) {
   .detail-grid { grid-template-columns: 1fr; }
   .link-row { flex-direction: column; }

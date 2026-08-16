@@ -272,7 +272,9 @@ const createResponse = `{
   "createdAtUtc": "2026-08-11T19:40:36Z",
   "paidAtUtc": null,
   "expiredAtUtc": "2026-08-11T20:40:36Z",
-  "failureReason": null
+  "failureReason": null,
+  "customerPhone": null,
+  "customerPhoneVerified": false
 }`
 
 const statusExample = computed(() => `curl ${API_BASE}/v1/payments/PAYMENT_ID \\
@@ -300,7 +302,9 @@ const webhookExample = `{
   "createdAtUtc": "2026-08-11T19:40:36Z",
   "paidAtUtc": "2026-08-11T19:41:10Z",
   "expiredAtUtc": "2026-08-11T20:40:36Z",
-  "failureReason": null
+  "failureReason": null,
+  "customerPhone": "+9647800000000",
+  "customerPhoneVerified": true
 }`
 
 function showToast(msg) {

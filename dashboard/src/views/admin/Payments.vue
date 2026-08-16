@@ -45,6 +45,7 @@
               <th>{{ $t('common.amount') }}</th>
               <th>{{ $t('payments.fee') }}</th>
               <th>{{ $t('payments.order') }}</th>
+              <th>{{ $t('payments.sectionCustomer') }}</th>
               <th>{{ $t('common.actions') }}</th>
             </tr>
           </thead>
@@ -69,6 +70,12 @@
                 <div class="order-cell">
                   <strong class="mono">{{ shortOrder(p.orderId) }}</strong>
                   <span class="muted mono">{{ p.id.slice(0, 8) }}</span>
+                </div>
+              </td>
+              <td>
+                <div class="order-cell">
+                  <strong class="mono ltr">{{ p.customerPhone || '—' }}</strong>
+                  <span class="muted">{{ p.customerPhoneVerifiedAtUtc ? $t('payments.customerVerified') : $t('payments.customerUnverified') }}</span>
                 </div>
               </td>
               <td>
@@ -243,6 +250,7 @@ onMounted(load)
 .date-cell .muted { font-size: 0.78rem; }
 .order-cell { display: grid; gap: 2px; min-width: 140px; }
 .order-cell .muted { font-size: 0.75rem; }
+.ltr { direction: ltr; text-align: start; unicode-bidi: isolate; }
 .money { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .muted-money { color: var(--muted); font-weight: 600; }
 .details-btn { padding: 8px 12px; font-size: 0.82rem; white-space: nowrap; }

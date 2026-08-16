@@ -244,6 +244,19 @@ public class OtpService
         if (!string.IsNullOrWhiteSpace(challenge.TargetEmail))
             payment.CustomerEmail = challenge.TargetEmail;
         payment.CustomerPhoneVerifiedAtUtc = DateTime.UtcNow;
+        payment.UpdatedAtUtc = DateTime.UtcNow;
+        _db.PaymentEvents.Add(new PaymentEvent
+        {
+            PaymentId = payment.Id,
+            Source = "CheckoutOtp",
+            EventType = "CustomerPhoneVerified",
+            Payload = JsonSerializer.Serialize(new
+            {
+                phone = payment.CustomerPhone,
+                email = payment.CustomerEmail,
+                verifiedAtUtc = payment.CustomerPhoneVerifiedAtUtc
+            }, JsonOpts)
+        });
         await _db.SaveChangesAsync(ct);
     }
 
