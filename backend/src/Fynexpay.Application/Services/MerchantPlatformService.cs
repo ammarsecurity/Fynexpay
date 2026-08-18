@@ -30,7 +30,7 @@ public class MerchantPlatformService
             .Where(p => p.MerchantId == merchantId)
             .OrderByDescending(p => p.CreatedAtUtc)
             .ToListAsync(ct);
-        return list.Select(p => Map(p)).ToList();
+        return list.Select(p => Map(p, includeSecrets: true)).ToList();
     }
 
     public async Task<IReadOnlyList<MerchantPlatformDto>> ListAdminAsync(string? status, string? q, CancellationToken ct = default)
@@ -180,7 +180,7 @@ public class MerchantPlatformService
         }
 
         if (!nameChanged && !domainChanged)
-            return Map(platform);
+            return Map(platform, includeSecrets: true);
 
         var requiresReview = previousStatus is PlatformStatus.Approved or PlatformStatus.Suspended or PlatformStatus.Rejected;
         if (requiresReview)
@@ -222,7 +222,7 @@ public class MerchantPlatformService
             new { platformId = platform.Id, domain = platform.Domain, name = platform.Name, requiresReview },
             ct);
 
-        return Map(platform);
+        return Map(platform, includeSecrets: true);
     }
 
     public async Task<MerchantPlatformDto> ReviewAsync(Guid platformId, Guid adminUserId, ReviewMerchantPlatformRequest request, CancellationToken ct = default)
@@ -318,8 +318,7 @@ public class MerchantPlatformService
 
         var (livePlain, testPlain) = await IssueKeysAsync(platform, ct);
         await _db.SaveChangesAsync(ct);
-        var dto = Map(platform);
-        return dto with { OneTimeApiKey = livePlain, OneTimeTestApiKey = testPlain, HasOneTimeApiKey = true };
+        return Map(platform, includeSecrets: true);
     }
 
     public async Task<MerchantPlatformDto> SetLogoAsync(
@@ -336,7 +335,7 @@ public class MerchantPlatformService
         platform.LogoUrl = logoUrl;
         platform.UpdatedAtUtc = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
-        return Map(platform);
+        return Map(platform, includeSecrets: true);
     }
 
     public async Task<MerchantPlatformDto> ClearLogoAsync(Guid merchantId, Guid platformId, CancellationToken ct = default)
@@ -349,24 +348,23 @@ public class MerchantPlatformService
         platform.LogoUrl = null;
         platform.UpdatedAtUtc = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
-        return Map(platform);
+        return Map(platform, includeSecrets: true);
     }
 
     public async Task<(string LiveKey, string? TestKey)> ClaimKeysAsync(Guid merchantId, Guid platformId, CancellationToken ct = default)
     {
         var platform = await _db.MerchantPlatforms
+            .Include(p => p.ApiKeys)
             .FirstOrDefaultAsync(p => p.Id == platformId && p.MerchantId == merchantId, ct)
             ?? throw new InvalidOperationException("المنصة غير موجودة");
 
-        if (string.IsNullOrWhiteSpace(platform.OneTimeApiKey) && string.IsNullOrWhiteSpace(platform.OneTimeTestApiKey))
-            throw new InvalidOperationException("لا يوجد مفتاح جاهز للاستلام. أعد توليد المفتاح إن لزم.");
+        var liveKey = PickLiveKey(platform);
+        var testKey = PickTestKey(platform);
+        var live = Reveal(liveKey?.EncryptedKey) ?? Reveal(platform.OneTimeApiKey) ?? "";
+        var test = Reveal(testKey?.EncryptedKey) ?? Reveal(platform.OneTimeTestApiKey);
+        if (string.IsNullOrWhiteSpace(live) && string.IsNullOrWhiteSpace(test))
+            throw new InvalidOperationException("لا يوجد مفتاح جاهز للعرض. أعد توليد المفتاح مرة واحدة ليبقى ظاهراً.");
 
-        var live = string.IsNullOrWhiteSpace(platform.OneTimeApiKey) ? "" : _protector.Unprotect(platform.OneTimeApiKey);
-        var test = string.IsNullOrWhiteSpace(platform.OneTimeTestApiKey) ? null : _protector.Unprotect(platform.OneTimeTestApiKey);
-        platform.OneTimeApiKey = null;
-        platform.OneTimeTestApiKey = null;
-        platform.UpdatedAtUtc = DateTime.UtcNow;
-        await _db.SaveChangesAsync(ct);
         return (live, test);
     }
 
@@ -405,6 +403,7 @@ public class MerchantPlatformService
             Name = $"Platform:{platform.Name}:live",
             KeyPrefix = livePrefix,
             KeyHash = liveHash,
+            EncryptedKey = _protector.Protect(livePlain),
             IsActive = true,
             IsTest = false
         };
@@ -417,6 +416,7 @@ public class MerchantPlatformService
             Name = $"Platform:{platform.Name}:test",
             KeyPrefix = testPrefix,
             KeyHash = testHash,
+            EncryptedKey = _protector.Protect(testPlain),
             IsActive = true,
             IsTest = true
         };
@@ -448,10 +448,14 @@ public class MerchantPlatformService
         p.ApiKeys?.FirstOrDefault(k => k.IsActive && k.IsTest)
         ?? p.ApiKeys?.FirstOrDefault(k => k.IsTest);
 
-    private static MerchantPlatformDto Map(MerchantPlatform p, bool includeMerchantName = false)
+    private MerchantPlatformDto Map(MerchantPlatform p, bool includeMerchantName = false, bool includeSecrets = false)
     {
         var live = PickLiveKey(p);
         var test = PickTestKey(p);
+        var liveSecret = includeSecrets ? RevealStatic(p, live, test: false) : null;
+        var testSecret = includeSecrets ? RevealStatic(p, test, test: true) : null;
+        var hasSecret = !string.IsNullOrWhiteSpace(liveSecret) || !string.IsNullOrWhiteSpace(testSecret)
+            || !string.IsNullOrWhiteSpace(p.OneTimeApiKey) || !string.IsNullOrWhiteSpace(p.OneTimeTestApiKey);
         return new(
             p.Id,
             p.MerchantId,
@@ -468,9 +472,23 @@ public class MerchantPlatformService
             live is { IsActive: true } ? live.KeyPrefix : null,
             test?.Id,
             test is { IsActive: true } ? test.KeyPrefix : null,
-            !string.IsNullOrWhiteSpace(p.OneTimeApiKey) || !string.IsNullOrWhiteSpace(p.OneTimeTestApiKey),
-            null,
-            null);
+            hasSecret,
+            includeSecrets ? liveSecret : null,
+            includeSecrets ? testSecret : null);
+    }
+
+    private string? Reveal(string? protectedText)
+    {
+        if (string.IsNullOrWhiteSpace(protectedText)) return null;
+        try { return _protector.Unprotect(protectedText); }
+        catch { return null; }
+    }
+
+    private string? RevealStatic(MerchantPlatform platform, ApiKey? key, bool test)
+    {
+        var fromKey = Reveal(key?.EncryptedKey);
+        if (!string.IsNullOrWhiteSpace(fromKey)) return fromKey;
+        return Reveal(test ? platform.OneTimeTestApiKey : platform.OneTimeApiKey);
     }
 
     public static string NormalizeDomain(string? input)

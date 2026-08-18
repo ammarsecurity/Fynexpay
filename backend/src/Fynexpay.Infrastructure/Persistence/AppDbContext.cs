@@ -74,6 +74,7 @@ public class AppDbContext : DbContext, IAppDbContext
             e.HasIndex(x => x.KeyPrefix);
             e.Property(x => x.KeyPrefix).HasMaxLength(16);
             e.Property(x => x.KeyHash).HasMaxLength(128);
+            e.Property(x => x.EncryptedKey).HasColumnType("longtext");
             e.HasOne(x => x.MerchantPlatform).WithMany(p => p.ApiKeys)
                 .HasForeignKey(x => x.MerchantPlatformId)
                 .OnDelete(DeleteBehavior.SetNull);

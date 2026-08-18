@@ -255,7 +255,8 @@ public record ApiKeyDto(
     DateTime? LastUsedAtUtc,
     Guid? MerchantPlatformId = null,
     string? PlatformName = null,
-    string? PlatformDomain = null);
+    string? PlatformDomain = null,
+    string? ApiKey = null);
 
 public record CreateApiKeyResponse(Guid Id, string Name, string KeyPrefix, string ApiKey, DateTime CreatedAtUtc);
 
@@ -265,7 +266,8 @@ public record MerchantBearerDto(
     bool IsActive,
     bool CanClaim,
     DateTime? CreatedAtUtc,
-    DateTime? LastUsedAtUtc);
+    DateTime? LastUsedAtUtc,
+    string? ApiKey = null);
 
 public record CreateMerchantPlatformRequest(string Name, string Domain);
 public record UpdateMerchantPlatformRequest(string? Name, string? Domain);

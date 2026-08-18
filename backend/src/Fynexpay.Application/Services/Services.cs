@@ -1300,13 +1300,20 @@ public class MerchantAdminService
     private readonly IApiKeyService _apiKeys;
     private readonly IPasswordHasher _passwordHasher;
     private readonly NotificationService _notifications;
+    private readonly ISecretProtector _protector;
 
-    public MerchantAdminService(IAppDbContext db, IApiKeyService apiKeys, IPasswordHasher passwordHasher, NotificationService notifications)
+    public MerchantAdminService(
+        IAppDbContext db,
+        IApiKeyService apiKeys,
+        IPasswordHasher passwordHasher,
+        NotificationService notifications,
+        ISecretProtector protector)
     {
         _db = db;
         _apiKeys = apiKeys;
         _passwordHasher = passwordHasher;
         _notifications = notifications;
+        _protector = protector;
     }
 
     public async Task<IReadOnlyList<MerchantDto>> ListAsync(CancellationToken ct = default)
@@ -1587,16 +1594,18 @@ public class MerchantAdminService
 
     public async Task<IReadOnlyList<ApiKeyDto>> ListApiKeysAsync(Guid merchantId, CancellationToken ct = default)
     {
-        return await _db.ApiKeys
+        var rows = await _db.ApiKeys
             .Include(k => k.MerchantPlatform)
             .Where(k => k.MerchantId == merchantId)
             .OrderByDescending(k => k.CreatedAtUtc)
-            .Select(k => new ApiKeyDto(
-                k.Id, k.Name, k.KeyPrefix, k.IsActive, k.IsTest, k.CreatedAtUtc, k.LastUsedAtUtc,
-                k.MerchantPlatformId,
-                k.MerchantPlatform != null ? k.MerchantPlatform.Name : null,
-                k.MerchantPlatform != null ? k.MerchantPlatform.Domain : null))
             .ToListAsync(ct);
+
+        return rows.Select(k => new ApiKeyDto(
+            k.Id, k.Name, k.KeyPrefix, k.IsActive, k.IsTest, k.CreatedAtUtc, k.LastUsedAtUtc,
+            k.MerchantPlatformId,
+            k.MerchantPlatform != null ? k.MerchantPlatform.Name : null,
+            k.MerchantPlatform != null ? k.MerchantPlatform.Domain : null,
+            Reveal(k.EncryptedKey))).ToList();
     }
 
     public async Task RevokeApiKeyAsync(Guid merchantId, Guid keyId, CancellationToken ct = default)
@@ -1619,14 +1628,20 @@ public class MerchantAdminService
             key?.IsActive == true,
             key == null || !key.IsActive,
             key?.CreatedAtUtc,
-            key?.LastUsedAtUtc);
+            key?.LastUsedAtUtc,
+            Reveal(key?.EncryptedKey));
     }
 
     public async Task<CreateApiKeyResponse> ClaimMerchantBearerAsync(Guid merchantId, CancellationToken ct = default)
     {
         var existing = await FindMerchantBearerAsync(merchantId, ct);
         if (existing is { IsActive: true })
-            throw new InvalidOperationException("مفتاح التاجر مُستلم مسبقاً. استخدم إعادة التوليد إن ضاع منك.");
+        {
+            var secret = Reveal(existing.EncryptedKey);
+            if (string.IsNullOrWhiteSpace(secret))
+                throw new InvalidOperationException("المفتاح موجود لكن النص الكامل غير محفوظ. أعد توليده مرة واحدة ليبقى ظاهراً.");
+            return new CreateApiKeyResponse(existing.Id, existing.Name, existing.KeyPrefix, secret, existing.CreatedAtUtc);
+        }
         return await IssueMerchantBearerAsync(merchantId, ct);
     }
 
@@ -1658,6 +1673,7 @@ public class MerchantAdminService
             Name = "Merchant",
             KeyPrefix = prefix,
             KeyHash = hash,
+            EncryptedKey = _protector.Protect(plain),
             IsActive = true,
             IsTest = false
         };
@@ -1675,6 +1691,13 @@ public class MerchantAdminService
 
     private static bool IsMerchantBearer(ApiKey key)
         => key.MerchantPlatformId == null && key.KeyPrefix.StartsWith("fx_merch_", StringComparison.OrdinalIgnoreCase);
+
+    private string? Reveal(string? protectedText)
+    {
+        if (string.IsNullOrWhiteSpace(protectedText)) return null;
+        try { return _protector.Unprotect(protectedText); }
+        catch { return null; }
+    }
 
     public async Task<MerchantDto> GetMerchantAsync(Guid merchantId, CancellationToken ct = default)
     {

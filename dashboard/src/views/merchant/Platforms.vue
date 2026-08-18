@@ -5,6 +5,7 @@
         <h1>{{ $t('platforms.title') }}</h1>
         <p class="sub">{{ $t('platforms.merchantSub') }}</p>
       </div>
+      <RouterLink class="btn secondary" to="/merchant/keys">{{ $t('nav.keys') }}</RouterLink>
     </div>
 
     <div class="card">
@@ -21,26 +22,6 @@
         <button class="btn" type="submit" :disabled="saving">{{ saving ? $t('common.loading') : $t('platforms.submit') }}</button>
       </form>
       <p v-if="error" class="error">{{ error }}</p>
-    </div>
-
-    <div v-if="revealedKey || revealedTestKey" class="card reveal">
-      <div class="reveal-top">
-        <div>
-          <strong>{{ $t('platforms.keyReady') }}</strong>
-          <p class="muted" style="margin:4px 0 0">{{ $t('platforms.keyOnce') }}</p>
-        </div>
-        <button class="btn secondary" type="button" @click="clearRevealed">{{ $t('platforms.hide') }}</button>
-      </div>
-      <div v-if="revealedKey" class="copy-box">
-        <div class="key-label">{{ $t('platforms.liveKey') }} <span class="mono muted">fx_live_</span></div>
-        <code class="mono value" dir="ltr">{{ revealedKey }}</code>
-        <button class="btn" type="button" @click="copy(revealedKey)">{{ $t('platforms.copyKey') }}</button>
-      </div>
-      <div v-if="revealedTestKey" class="copy-box" style="margin-top:12px">
-        <div class="key-label">{{ $t('platforms.testKey') }} <span class="mono muted">fx_test_</span></div>
-        <code class="mono value" dir="ltr">{{ revealedTestKey }}</code>
-        <button class="btn secondary" type="button" @click="copy(revealedTestKey)">{{ $t('platforms.copyKey') }}</button>
-      </div>
     </div>
 
     <div class="card">
@@ -83,8 +64,6 @@
             </div>
             <div class="meta muted">
               <span class="mono" dir="ltr">{{ p.domain }}</span>
-              <span v-if="p.apiKeyPrefix" class="mono" dir="ltr">live {{ p.apiKeyPrefix }}••••</span>
-              <span v-if="p.testApiKeyPrefix" class="mono" dir="ltr">test {{ p.testApiKeyPrefix }}••••</span>
               <span>{{ when(p.createdAtUtc) }}</span>
             </div>
             <p class="logo-hint">{{ $t('platforms.logoHint') }}</p>
@@ -93,18 +72,7 @@
           </div>
           <div class="actions">
             <button class="btn secondary" type="button" @click="startEdit(p)">{{ $t('platforms.edit') }}</button>
-            <button
-              v-if="p.hasOneTimeApiKey"
-              class="btn"
-              type="button"
-              @click="claim(p)"
-            >{{ $t('platforms.claimKey') }}</button>
-            <button
-              v-if="p.status === 'Approved'"
-              class="btn secondary"
-              type="button"
-              @click="regen(p)"
-            >{{ $t('platforms.regen') }}</button>
+            <RouterLink v-if="p.status === 'Approved'" class="btn ghost" to="/merchant/keys">{{ $t('nav.keys') }}</RouterLink>
           </div>
 
           <div v-if="editingId === p.id" class="edit-panel">
@@ -144,8 +112,6 @@ const { confirm } = useDialog()
 const platforms = ref([])
 const saving = ref(false)
 const error = ref('')
-const revealedKey = ref('')
-const revealedTestKey = ref('')
 const uploadingId = ref('')
 const logoError = reactive({})
 const form = reactive({ name: '', domain: '' })
@@ -219,9 +185,6 @@ function initials(name) {
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean)
   if (!parts.length) return '?'
   return parts.slice(0, 2).map((p) => p[0]).join('').toUpperCase()
-}
-async function copy(text) {
-  try { await navigator.clipboard.writeText(text) } catch { /* ignore */ }
 }
 
 function readImageMeta(file) {
@@ -311,40 +274,6 @@ async function removeLogo(p) {
     logoError[p.id] = e.response?.data?.message || t('platforms.logoFail')
   } finally {
     uploadingId.value = ''
-  }
-}
-
-function clearRevealed() {
-  revealedKey.value = ''
-  revealedTestKey.value = ''
-}
-
-async function claim(p) {
-  try {
-    const { data } = await api.post(`/api/merchant/platforms/${p.id}/claim-key`)
-    revealedKey.value = data.apiKey || data.liveApiKey || ''
-    revealedTestKey.value = data.testApiKey || ''
-    await load()
-  } catch (e) {
-    error.value = e.response?.data?.message || t('platforms.claimFail')
-  }
-}
-
-async function regen(p) {
-  const ok = await confirm({
-    variant: 'danger',
-    title: t('dialog.dangerTitle'),
-    message: t('platforms.regenConfirm'),
-    confirmText: t('platforms.regen')
-  })
-  if (!ok) return
-  try {
-    const { data } = await api.post(`/api/merchant/platforms/${p.id}/regenerate-key`)
-    if (data.oneTimeApiKey) revealedKey.value = data.oneTimeApiKey
-    if (data.oneTimeTestApiKey) revealedTestKey.value = data.oneTimeTestApiKey
-    await load()
-  } catch (e) {
-    error.value = e.response?.data?.message || t('platforms.regenFail')
   }
 }
 
@@ -486,33 +415,6 @@ onMounted(load)
   font-weight: 700;
   margin: 0 0 12px;
 }
-.reveal {
-  border-color: rgba(16, 185, 129, 0.35);
-  background: rgba(16, 185, 129, 0.06);
-}
-.reveal-top {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-.copy-box {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 10px 12px;
-}
-.key-label {
-  flex: 1 0 100%;
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: var(--muted);
-}
-.value { flex: 1; overflow-x: auto; white-space: nowrap; font-weight: 700; }
 @media (max-width: 800px) {
   .form-row, .edit-form { grid-template-columns: 1fr; }
 }
