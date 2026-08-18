@@ -64,6 +64,7 @@ public class AuthController : ControllerBase
     public async Task<ActionResult<AuthResponse>> Login([FromBody] LoginRequest request, CancellationToken ct)
     {
         try { return Ok(await _auth.LoginAsync(request, ct)); }
+        catch (OtpRequiredException ex) { return BadRequest(new { message = ex.Message, code = "otp_required" }); }
         catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
@@ -915,7 +916,7 @@ public class AdminController : ControllerBase
         }
     }
 
-    public record UltramsgTestMessageRequest(string Phone, string? Message);
+    public record UltramsgTestMessageRequest(string Phone, string? Message, string? TemplateKey);
     public record EmailTestRequest(string? To);
 
     [HttpPost("ultramsg/test")]
@@ -934,16 +935,113 @@ public class AdminController : ControllerBase
                     digits = settings.DefaultCountryCode + digits[1..];
                 phone = "+" + digits;
             }
-            var body = string.IsNullOrWhiteSpace(request.Message)
-                ? "اختبار اتصال Fynexpay عبر Ultramsg ✓"
-                : request.Message.Trim();
-            await _ultramsg.SendChatAsync(phone, body, ct);
+
+            var key = string.IsNullOrWhiteSpace(request.TemplateKey) ? null : request.TemplateKey.Trim();
+            if (!string.IsNullOrWhiteSpace(key))
+            {
+                await _ultramsg.SendTemplateAsync(phone, key, new Dictionary<string, string?>
+                {
+                    ["code"] = "123456",
+                    ["title"] = "رسالة اختبار",
+                    ["body"] = string.IsNullOrWhiteSpace(request.Message)
+                        ? "هذه معاينة من لوحة إدارة FynexPay."
+                        : request.Message.Trim()
+                }, ct);
+            }
+            else if (!string.IsNullOrWhiteSpace(request.Message))
+            {
+                await _ultramsg.SendTemplateAsync(
+                    phone,
+                    WhatsAppTemplateKeys.NotifyGeneric,
+                    new Dictionary<string, string?>
+                    {
+                        ["title"] = "رسالة اختبار",
+                        ["body"] = request.Message.Trim()
+                    },
+                    ct);
+            }
+            else
+            {
+                await _ultramsg.SendTemplateAsync(
+                    phone,
+                    WhatsAppTemplateKeys.NotifyGeneric,
+                    new Dictionary<string, string?>
+                    {
+                        ["title"] = "اختبار اتصال FynexPay",
+                        ["body"] = "تم إرسال هذه الرسالة من لوحة الإدارة للتحقق من القالب والصورة."
+                    },
+                    ct);
+            }
+
             return Ok(new { message = "تم إرسال رسالة الاختبار", to = phone });
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
             return BadRequest(new { message = ex.Message });
         }
+    }
+
+    [HttpPost("ultramsg/templates/{key}/image")]
+    [RequestSizeLimit(2_000_000)]
+    public async Task<ActionResult<UltramsgSettings>> UploadTemplateImage(string key, IFormFile file, CancellationToken ct)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { message = "لم يُرفع ملف" });
+
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (ext is not (".png" or ".jpg" or ".jpeg" or ".webp"))
+            return BadRequest(new { message = "الصيغ المسموحة: png, jpg, webp" });
+
+        await using var ms = new MemoryStream();
+        await file.CopyToAsync(ms, ct);
+        var bytes = ms.ToArray();
+        if (!LooksLikeImage(bytes.AsSpan(0, Math.Min(bytes.Length, 12)), ext))
+            return BadRequest(new { message = "الملف ليس صورة صالحة" });
+
+        var uploadsDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "whatsapp");
+        Directory.CreateDirectory(uploadsDir);
+        var safeKey = new string((key ?? "default").Where(ch => char.IsLetterOrDigit(ch) || ch is '.' or '-' or '_').ToArray());
+        if (string.IsNullOrWhiteSpace(safeKey)) safeKey = "default";
+        var fileName = $"{safeKey}-{Guid.NewGuid():N}{ext}";
+        await System.IO.File.WriteAllBytesAsync(Path.Combine(uploadsDir, fileName), bytes, ct);
+        var url = $"/uploads/whatsapp/{fileName}?v={DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
+
+        var settings = await _ultramsgSettings.GetAsync(ct);
+        if (string.Equals(safeKey, "default", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(key, "default", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.DefaultImageUrl = url;
+        }
+        else
+        {
+            var tpl = settings.Templates.FirstOrDefault(t =>
+                string.Equals(t.Key, key, StringComparison.OrdinalIgnoreCase));
+            if (tpl == null)
+                return BadRequest(new { message = "القالب غير موجود" });
+            tpl.ImageUrl = url;
+        }
+
+        return Ok(await _ultramsgSettings.SaveAsync(settings, ct));
+    }
+
+    [HttpDelete("ultramsg/templates/{key}/image")]
+    public async Task<ActionResult<UltramsgSettings>> RemoveTemplateImage(string key, CancellationToken ct)
+    {
+        var settings = await _ultramsgSettings.GetAsync(ct);
+        if (string.Equals(key, "default", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.DefaultImageUrl = null;
+        }
+        else
+        {
+            var tpl = settings.Templates.FirstOrDefault(t =>
+                string.Equals(t.Key, key, StringComparison.OrdinalIgnoreCase));
+            if (tpl == null)
+                return BadRequest(new { message = "القالب غير موجود" });
+            tpl.ImageUrl = null;
+        }
+
+        return Ok(await _ultramsgSettings.SaveAsync(settings, ct));
     }
 
     [HttpPost("ultramsg/test-email")]

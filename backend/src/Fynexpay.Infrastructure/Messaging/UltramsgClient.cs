@@ -1,7 +1,9 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Fynexpay.Application.Abstractions.Messaging;
+using Fynexpay.Application.Services;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Fynexpay.Infrastructure.Messaging;
 
@@ -9,15 +11,18 @@ public class UltramsgClient : IUltramsgClient
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IUltramsgSettingsService _settings;
+    private readonly IOptions<AppOptions> _app;
     private readonly ILogger<UltramsgClient> _logger;
 
     public UltramsgClient(
         IHttpClientFactory httpClientFactory,
         IUltramsgSettingsService settings,
+        IOptions<AppOptions> app,
         ILogger<UltramsgClient> logger)
     {
         _httpClientFactory = httpClientFactory;
         _settings = settings;
+        _app = app;
         _logger = logger;
     }
 
@@ -111,6 +116,80 @@ public class UltramsgClient : IUltramsgClient
             throw new InvalidOperationException($"Ultramsg rejected message: {raw}");
         }
     }
+
+    public async Task SendImageAsync(string phoneE164, string imageUrl, string? caption, CancellationToken ct = default)
+    {
+        var s = await _settings.GetAsync(ct);
+        if (string.IsNullOrWhiteSpace(s.InstanceId) || string.IsNullOrWhiteSpace(s.Token))
+            throw new InvalidOperationException("إعدادات Ultramsg غير مكتملة");
+
+        var client = _httpClientFactory.CreateClient("ultramsg");
+        var url = $"https://api.ultramsg.com/{Uri.EscapeDataString(s.InstanceId)}/messages/image";
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["token"] = s.Token,
+            ["to"] = phoneE164,
+            ["image"] = imageUrl,
+            ["caption"] = caption ?? ""
+        });
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/x-www-form-urlencoded");
+
+        using var res = await client.PostAsync(url, content, ct);
+        var raw = await res.Content.ReadAsStringAsync(ct);
+        if (!res.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Ultramsg image error HTTP {(int)res.StatusCode}: {raw}");
+
+        if (raw.Contains("\"error\"", StringComparison.OrdinalIgnoreCase) &&
+            !raw.Contains("\"sent\":\"true\"", StringComparison.OrdinalIgnoreCase) &&
+            !raw.Contains("\"sent\": \"true\"", StringComparison.OrdinalIgnoreCase) &&
+            !raw.Contains("\"sent\":true", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"Ultramsg rejected image: {raw}");
+        }
+    }
+
+    public async Task SendTemplateAsync(
+        string phoneE164,
+        string templateKey,
+        IReadOnlyDictionary<string, string?> vars,
+        CancellationToken ct = default)
+    {
+        var s = await _settings.GetAsync(ct);
+        var tpl = WhatsAppTemplates.Resolve(s, templateKey);
+        var body = WhatsAppTemplates.Render(tpl.Body, vars);
+        var image = Absolutize(FirstNonEmpty(tpl.ImageUrl, s.DefaultImageUrl));
+        if (!string.IsNullOrWhiteSpace(image))
+        {
+            try
+            {
+                await SendImageAsync(phoneE164, image, body, ct);
+                return;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Ultramsg image send failed, falling back to text for {Key}", templateKey);
+            }
+        }
+
+        await SendChatAsync(phoneE164, body, ct);
+    }
+
+    private string? Absolutize(string? imageUrl)
+    {
+        if (string.IsNullOrWhiteSpace(imageUrl)) return null;
+        var value = imageUrl.Trim();
+        if (value.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            value.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            return value;
+
+        var root = (_app.Value.PublicBaseUrl ?? "").TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(root)) return value;
+        if (!value.StartsWith('/')) value = "/" + value;
+        return root + value;
+    }
+
+    private static string? FirstNonEmpty(params string?[] values)
+        => values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
 
     /// <summary>
     /// Ultramsg may return:

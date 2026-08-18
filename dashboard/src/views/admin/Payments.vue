@@ -256,4 +256,11 @@ onMounted(load)
 .details-btn { padding: 8px 12px; font-size: 0.82rem; white-space: nowrap; }
 .table-card :deep(.pagination) { padding: 12px 16px 16px; margin-top: 0; }
 .table-card > .muted { padding: 16px; }
+@media (max-width: 600px) {
+  .mode-switch { width: 100%; display: flex; }
+  .mode-switch button { flex: 1; min-height: 44px; }
+  .details-btn { min-height: 40px; }
+  .payments-table th,
+  .payments-table td { padding: 10px 12px; }
+}
 </style>

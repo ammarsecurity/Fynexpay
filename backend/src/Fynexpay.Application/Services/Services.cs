@@ -160,21 +160,21 @@ public class AuthService
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken ct = default)
     {
-        var s = await _ultramsgSettings.GetAsync(ct);
-        if (LoginOtpRequired(s))
-            throw new InvalidOperationException("يجب تأكيد رمز التحقق أولاً عبر /api/auth/login/send-otp ثم verify");
-
         var user = await AuthenticateForLoginAsync(request, ct);
+        var s = await _ultramsgSettings.GetAsync(ct);
+        if (LoginOtpRequiredFor(s, user))
+            throw new OtpRequiredException();
+
         return IssueAuth(user);
     }
 
     public async Task<OtpSendResultDto> SendLoginOtpAsync(LoginRequest request, CancellationToken ct = default)
     {
-        var s = await _ultramsgSettings.GetAsync(ct);
-        if (!LoginOtpRequired(s))
-            throw new InvalidOperationException("تأكيد OTP لتسجيل الدخول غير مطلوب حالياً");
-
         var user = await AuthenticateForLoginAsync(request, ct);
+        var s = await _ultramsgSettings.GetAsync(ct);
+        if (!LoginOtpRequiredFor(s, user))
+            throw new InvalidOperationException("تأكيد OTP لتسجيل الدخول غير مطلوب حالياً لهذا الحساب");
+
         var result = await _otp.SendLoginOtpAsync(user, ct);
         return new OtpSendResultDto(result.ChallengeId, result.MaskedDestination, result.ExpiresInSeconds, result.DevCode, result.Via);
     }
@@ -228,8 +228,14 @@ public class AuthService
             pending);
     }
 
-    private static bool LoginOtpRequired(UltramsgSettings s)
-        => s.Enabled && s.RequireMerchantRegisterOtp && (s.UsesWhatsApp() || s.UsesEmail());
+    private static bool LoginOtpRequiredFor(UltramsgSettings s, User user)
+    {
+        if (!s.Enabled || (!s.UsesWhatsApp() && !s.UsesEmail()))
+            return false;
+        if (user.Role == UserRole.Admin)
+            return s.RequireAdminLoginOtp;
+        return s.RequireMerchantRegisterOtp;
+    }
 
     public async Task<OtpSendResultDto> SendForgotPasswordOtpAsync(ForgotPasswordRequest request, CancellationToken ct = default)
     {

@@ -458,6 +458,8 @@ onMounted(load)
   .head-actions { width: 100%; }
   .head-actions .btn { flex: 1; }
   .period-chip { flex: 1; text-align: center; }
+  .mode-switch { width: 100%; display: flex; }
+  .mode-switch button { flex: 1; min-height: 44px; }
 }
 
 </style>

@@ -75,4 +75,31 @@ function onSize(v) {
   display: inline-block;
   transform: scaleX(-1);
 }
+@media (max-width: 600px) {
+  .pagination {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .meta { text-align: center; }
+  .controls {
+    justify-content: space-between;
+    flex-wrap: nowrap;
+  }
+  .page-size {
+    flex: 1;
+    min-height: 44px;
+    font-size: 16px;
+  }
+  .page-label {
+    flex: 1;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .controls .btn {
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
 </style>

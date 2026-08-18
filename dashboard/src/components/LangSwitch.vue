@@ -37,4 +37,11 @@ function set(loc) {
   background: var(--brand-soft);
   color: var(--brand-secondary);
 }
+@media (max-width: 900px) {
+  .lang-switch button {
+    min-height: 44px;
+    min-width: 40px;
+    padding: 8px 12px;
+  }
+}
 </style>

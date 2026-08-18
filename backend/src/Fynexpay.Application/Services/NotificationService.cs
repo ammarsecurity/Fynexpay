@@ -208,7 +208,11 @@ public class NotificationService
                     var phone = NormalizePhone(user.Phone, ultra.DefaultCountryCode);
                     if (!string.IsNullOrWhiteSpace(phone))
                     {
-                        await _ultramsg.SendChatAsync(phone, $"*{title}*\n{body}", ct);
+                        await _ultramsg.SendTemplateAsync(
+                            phone,
+                            WhatsAppTemplateKeys.ForNotification(type),
+                            new Dictionary<string, string?> { ["title"] = title, ["body"] = body },
+                            ct);
                         waSent = true;
                     }
                 }
@@ -253,7 +257,11 @@ public class NotificationService
 
         try
         {
-            await _ultramsg.SendChatAsync(phone, $"*{title}*\n{body}", ct);
+            await _ultramsg.SendTemplateAsync(
+                phone,
+                WhatsAppTemplateKeys.ForNotification(type),
+                new Dictionary<string, string?> { ["title"] = title, ["body"] = body },
+                ct);
         }
         catch (Exception ex)
         {

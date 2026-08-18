@@ -25,11 +25,11 @@
           <option v-for="p in providers" :key="p" :value="p">{{ p }}</option>
         </select>
       </div>
-      <div class="field" v-if="showDates">
+      <div class="field date" v-if="showDates">
         <label>{{ $t('common.from') }}</label>
         <input type="date" :value="modelValue.from || ''" @change="patch({ from: $event.target.value })" />
       </div>
-      <div class="field" v-if="showDates">
+      <div class="field date" v-if="showDates">
         <label>{{ $t('common.to') }}</label>
         <input type="date" :value="modelValue.to || ''" @change="patch({ to: $event.target.value })" />
       </div>
@@ -84,4 +84,33 @@ function patch(partial) {
 .field { margin-bottom: 0; min-width: 140px; }
 .field.search { min-width: 220px; flex: 1; }
 .actions { display: flex; gap: 8px; }
+@media (max-width: 600px) {
+  .data-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 16px;
+  }
+  .filters {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .field,
+  .field.search {
+    min-width: 0;
+    width: 100%;
+  }
+  .field.search { grid-column: 1 / -1; }
+  .field:not(.search):not(.date) { grid-column: 1 / -1; }
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+  .actions .btn {
+    width: 100%;
+    min-height: 44px;
+  }
+}
 </style>

@@ -41,6 +41,13 @@
               <small :class="isReady ? 'ok-text' : ''">{{ statusTitle }}</small>
             </span>
           </button>
+          <button type="button" class="side-item" :class="{ active: tab === 'templates' }" @click="tab = 'templates'">
+            <span class="side-ico tpl"><i class="bi bi-chat-square-text" aria-hidden="true"></i></span>
+            <span class="side-copy">
+              <strong>{{ $t('otp.tabTemplates') }}</strong>
+              <small>{{ $t('otp.tabTemplatesHint') }}</small>
+            </span>
+          </button>
           <button type="button" class="side-item" :class="{ active: tab === 'email' }" @click="tab = 'email'">
             <span class="side-ico mail"><i class="bi bi-envelope" aria-hidden="true"></i></span>
             <span class="side-copy">
@@ -112,6 +119,13 @@
                 </div>
               </label>
               <label class="policy-item">
+                <input type="checkbox" v-model="settings.requireAdminLoginOtp" />
+                <div>
+                  <strong>{{ $t('ultramsg.requireAdminLogin') }}</strong>
+                  <span>{{ $t('ultramsg.requireAdminLoginHint') }}</span>
+                </div>
+              </label>
+              <label class="policy-item">
                 <input type="checkbox" v-model="settings.requireCheckoutOtp" />
                 <div>
                   <strong>{{ $t('ultramsg.requireCheckout') }}</strong>
@@ -173,20 +187,11 @@
               <div class="panel-head">
                 <div>
                   <h3>{{ $t('otp.waTemplates') }}</h3>
-                  <p class="muted">{{ $t('ultramsg.templateHint') }}</p>
+                  <p class="muted">{{ $t('otp.templatesMovedHint') }}</p>
                 </div>
-              </div>
-              <div class="field">
-                <label>{{ $t('ultramsg.registerMsg') }}</label>
-                <textarea v-model="settings.merchantRegisterMessage" rows="3"></textarea>
-              </div>
-              <div class="field">
-                <label>{{ $t('ultramsg.checkoutMsg') }}</label>
-                <textarea v-model="settings.checkoutMessage" rows="3"></textarea>
-              </div>
-              <div class="field">
-                <label>{{ $t('ultramsg.resetMsg') }}</label>
-                <textarea v-model="settings.passwordResetMessage" rows="3"></textarea>
+                <button class="btn secondary" type="button" @click="tab = 'templates'">
+                  {{ $t('otp.openTemplates') }}
+                </button>
               </div>
             </article>
 
@@ -237,6 +242,108 @@
               </button>
             </template>
           </article>
+        </div>
+
+        <!-- Templates -->
+        <div v-else-if="tab === 'templates'" class="tpl-layout">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>{{ $t('otp.templatesTitle') }}</h3>
+                <p class="muted">{{ $t('otp.templatesHint') }}</p>
+              </div>
+            </div>
+            <div class="default-image">
+              <div class="image-preview" :class="{ empty: !settings.defaultImageUrl }">
+                <img v-if="settings.defaultImageUrl" :src="mediaUrl(settings.defaultImageUrl)" alt="" />
+                <i v-else class="bi bi-image" aria-hidden="true"></i>
+              </div>
+              <div class="image-copy">
+                <strong>{{ $t('otp.defaultImage') }}</strong>
+                <p class="muted">{{ $t('otp.defaultImageHint') }}</p>
+                <div class="image-actions">
+                  <label class="btn secondary">
+                    {{ $t('otp.uploadImage') }}
+                    <input type="file" accept="image/png,image/jpeg,image/webp" hidden @change="onUploadImage($event, 'default')" />
+                  </label>
+                  <button v-if="settings.defaultImageUrl" class="btn ghost" type="button" @click="removeImage('default')">{{ $t('otp.removeImage') }}</button>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <div class="tpl-workspace">
+            <article class="panel tpl-list-panel">
+              <div class="group-chips" role="tablist">
+                <button v-for="g in templateGroups" :key="g.id" type="button" class="chip" :class="{ on: tplGroup === g.id }" @click="tplGroup = g.id">
+                  {{ $t(g.label) }}
+                </button>
+              </div>
+              <button
+                v-for="item in visibleTemplates"
+                :key="item.key"
+                type="button"
+                class="tpl-item"
+                :class="{ active: selectedTplKey === item.key }"
+                @click="selectedTplKey = item.key"
+              >
+                <span>
+                  <strong>{{ tplLabel(item.key) }}</strong>
+                  <small class="muted">{{ item.key }}</small>
+                </span>
+                <i v-if="item.imageUrl || settings.defaultImageUrl" class="bi bi-image" aria-hidden="true"></i>
+              </button>
+            </article>
+
+            <article class="panel tpl-editor" v-if="selectedTemplate">
+              <div class="panel-head">
+                <div>
+                  <h3>{{ tplLabel(selectedTemplate.key) }}</h3>
+                  <p class="muted">{{ $t('otp.placeholdersHint') }}</p>
+                </div>
+              </div>
+              <div class="chips">
+                <button v-for="ph in placeholdersFor(selectedTemplate.key)" :key="ph" type="button" class="chip ghost" @click="insertPlaceholder(ph)">{{ ph }}</button>
+              </div>
+              <div class="field">
+                <label>{{ $t('otp.templateBody') }}</label>
+                <textarea v-model="selectedTemplate.body" rows="10"></textarea>
+              </div>
+              <div class="default-image compact">
+                <div class="image-preview" :class="{ empty: !previewImage }">
+                  <img v-if="previewImage" :src="mediaUrl(previewImage)" alt="" />
+                  <i v-else class="bi bi-image" aria-hidden="true"></i>
+                </div>
+                <div class="image-copy">
+                  <strong>{{ $t('otp.templateImage') }}</strong>
+                  <p class="muted">{{ selectedTemplate.imageUrl ? $t('otp.customImage') : $t('otp.usesDefaultImage') }}</p>
+                  <div class="image-actions">
+                    <label class="btn secondary">
+                      {{ $t('otp.uploadImage') }}
+                      <input type="file" accept="image/png,image/jpeg,image/webp" hidden @change="onUploadImage($event, selectedTemplate.key)" />
+                    </label>
+                    <button v-if="selectedTemplate.imageUrl" class="btn ghost" type="button" @click="removeImage(selectedTemplate.key)">{{ $t('otp.removeImage') }}</button>
+                  </div>
+                </div>
+              </div>
+              <div class="preview-card">
+                <span class="preview-label">{{ $t('otp.preview') }}</span>
+                <div class="wa-bubble">
+                  <img v-if="previewImage" :src="mediaUrl(previewImage)" alt="" />
+                  <pre>{{ previewText }}</pre>
+                </div>
+              </div>
+              <div class="test-row">
+                <div class="field grow">
+                  <label>{{ $t('auth.phone') }}</label>
+                  <input v-model="testPhone" class="ltr" placeholder="07xxxxxxxxx" />
+                </div>
+                <button class="btn" type="button" :disabled="testing" @click="sendTemplateTest">
+                  {{ testing ? $t('common.loading') : $t('otp.sendTemplateTest') }}
+                </button>
+              </div>
+            </article>
+          </div>
         </div>
 
         <!-- Email -->
@@ -424,7 +531,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '../../api'
 
@@ -443,8 +550,119 @@ const testing = ref(false)
 const testingEmail = ref(false)
 const testPhone = ref('')
 const testEmail = ref('')
+const tplGroup = ref('otp')
+const selectedTplKey = ref('otp.register')
 let qrObjectUrl = ''
 let pollTimer = null
+
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5080'
+
+const templateGroups = [
+  { id: 'otp', label: 'otp.groupOtp' },
+  { id: 'merchant', label: 'otp.groupMerchant' },
+  { id: 'admin', label: 'otp.groupAdmin' }
+]
+
+const visibleTemplates = computed(() => {
+  const list = settings.value?.templates || []
+  return list.filter((item) => groupOf(item.key) === tplGroup.value)
+})
+
+const selectedTemplate = computed(() => {
+  const list = settings.value?.templates || []
+  return list.find((item) => item.key === selectedTplKey.value) || visibleTemplates.value[0] || null
+})
+
+const previewImage = computed(() => selectedTemplate.value?.imageUrl || settings.value?.defaultImageUrl || '')
+
+const previewText = computed(() => {
+  const body = selectedTemplate.value?.body || ''
+  return body
+    .replaceAll('{code}', '123456')
+    .replaceAll('{title}', t('otp.previewTitle'))
+    .replaceAll('{body}', t('otp.previewBody'))
+})
+
+watch(tplGroup, () => {
+  const first = visibleTemplates.value[0]
+  if (first) selectedTplKey.value = first.key
+})
+
+function groupOf(key) {
+  if (key.startsWith('otp.')) return 'otp'
+  if (key === 'notify.generic' || /notify\.(MerchantRegistered|PlatformSubmitted|PayoutRequested|KycSubmitted)/.test(key)) return 'admin'
+  return 'merchant'
+}
+
+function tplLabel(key) {
+  return t(`otp.tpl_${String(key).replaceAll('.', '_')}`)
+}
+
+function placeholdersFor(key) {
+  return key.startsWith('otp.') ? ['{code}'] : ['{title}', '{body}']
+}
+
+function insertPlaceholder(ph) {
+  if (!selectedTemplate.value) return
+  selectedTemplate.value.body = `${selectedTemplate.value.body || ''}${ph}`
+}
+
+function mediaUrl(path) {
+  if (!path) return ''
+  if (/^https?:\/\//i.test(path)) return path
+  return `${API_BASE}${path}`
+}
+
+async function onUploadImage(event, key) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  error.value = ''
+  message.value = ''
+  saving.value = true
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    const { data } = await api.post(`/api/admin/ultramsg/templates/${encodeURIComponent(key)}/image`, form)
+    const bodies = Object.fromEntries((settings.value?.templates || []).map((t) => [t.key, t.body]))
+    settings.value = data
+    for (const tpl of settings.value.templates || []) {
+      if (bodies[tpl.key] != null) tpl.body = bodies[tpl.key]
+    }
+    message.value = t('otp.imageUploaded')
+  } catch (e) {
+    error.value = e.response?.data?.message || t('otp.imageFail')
+  } finally {
+    saving.value = false
+  }
+}
+
+async function removeImage(key) {
+  error.value = ''
+  try {
+    const { data } = await api.delete(`/api/admin/ultramsg/templates/${encodeURIComponent(key)}/image`)
+    settings.value = data
+  } catch (e) {
+    error.value = e.response?.data?.message || t('otp.imageFail')
+  }
+}
+
+async function sendTemplateTest() {
+  error.value = ''
+  message.value = ''
+  testing.value = true
+  try {
+    const { data } = await api.post('/api/admin/ultramsg/test', {
+      phone: testPhone.value,
+      templateKey: selectedTemplate.value?.key
+    })
+    message.value = data.message
+  } catch (e) {
+    error.value = e.response?.data?.message || t('ultramsg.testFail')
+  } finally {
+    testing.value = false
+  }
+}
 
 const isReady = computed(() => !!status.value?.isReady)
 const channelLabel = computed(() => {
@@ -706,6 +924,7 @@ html[dir="ltr"] .side-item.active { box-shadow: inset -3px 0 0 var(--brand-secon
 }
 .side-ico.wa { background: rgba(37, 211, 102, 0.14); color: #128c7e; }
 .side-ico.mail { background: rgba(3, 24, 56, 0.12); color: var(--brand-secondary); }
+.side-ico.tpl { background: rgba(99, 102, 241, 0.12); color: #4f46e5; }
 .side-ico.bell { background: rgba(14, 165, 233, 0.12); color: #0284c7; }
 
 .stack { display: grid; gap: 16px; }
@@ -716,7 +935,7 @@ html[dir="ltr"] .side-item.active { box-shadow: inset -3px 0 0 var(--brand-secon
   padding: 22px 24px;
   box-shadow: var(--shadow-sm);
 }
-.panel-head { margin-bottom: 4px; }
+.panel-head { margin-bottom: 4px; display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
 .panel-head h3 {
   margin: 0 0 6px;
   font-size: 17px;
@@ -791,6 +1010,8 @@ html[dir="ltr"] .side-item.active { box-shadow: inset -3px 0 0 var(--brand-secon
 }
 .policy-item input { width: 18px; height: 18px; accent-color: var(--brand-secondary); }
 .policy-item strong { font-size: 14px; }
+.policy-item div { display: grid; gap: 4px; }
+.policy-item span { font-size: 0.82rem; color: var(--muted); line-height: 1.5; }
 .smtp-ssl { margin-top: 14px; }
 
 .creds-grid {
@@ -944,12 +1165,111 @@ textarea:focus, .panel input:focus {
   white-space: nowrap;
 }
 
+.tpl-layout { display: grid; gap: 16px; }
+.tpl-workspace {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.9fr) minmax(0, 1.4fr);
+  gap: 16px;
+  align-items: start;
+}
+.group-chips, .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.chip {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+.chip.on, .chip:hover { color: var(--brand); border-color: rgba(3, 24, 56, 0.25); background: #f8fafc; }
+.chip.ghost { font-family: ui-monospace, monospace; direction: ltr; }
+.tpl-list-panel { padding: 14px; }
+.tpl-item {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  text-align: start;
+  padding: 12px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+}
+.tpl-item strong { display: block; }
+.tpl-item small { display: block; margin-top: 2px; font-size: 0.72rem; }
+.tpl-item.active { background: #eff6ff; color: #1d4ed8; }
+.default-image {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 16px;
+  align-items: center;
+  padding: 4px 0 8px;
+}
+.default-image.compact { margin: 8px 0 16px; }
+.image-preview {
+  width: 88px;
+  height: 88px;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: #f8fafc;
+  display: grid;
+  place-items: center;
+}
+.image-preview img { width: 100%; height: 100%; object-fit: cover; }
+.image-preview.empty { color: #94a3b8; font-size: 1.4rem; }
+.image-copy strong { display: block; margin-bottom: 4px; }
+.image-copy .muted { margin: 0 0 10px; font-size: 0.85rem; }
+.image-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn.ghost {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.preview-card { margin: 8px 0 16px; }
+.preview-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.wa-bubble {
+  background: #dcf8c6;
+  color: #111827;
+  border-radius: 16px 16px 4px 16px;
+  padding: 12px;
+  max-width: 360px;
+}
+.wa-bubble img {
+  width: 100%;
+  border-radius: 10px;
+  margin-bottom: 8px;
+  display: block;
+}
+.wa-bubble pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 0.92rem;
+  line-height: 1.7;
+}
+
 @media (max-width: 1024px) {
-  .otp-layout, .wa-grid, .channel-grid { grid-template-columns: 1fr; }
+  .otp-layout, .wa-grid, .channel-grid, .tpl-workspace { grid-template-columns: 1fr; }
   .otp-side { position: static; }
   .side-nav {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
     gap: 6px;
   }
   .side-item { flex-direction: column; text-align: center; padding: 10px 8px; gap: 8px; }

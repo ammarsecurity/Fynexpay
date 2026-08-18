@@ -120,11 +120,20 @@
         <button class="menu-btn" type="button" @click="navOpen = true" :aria-label="$t('common.menu')">
           <i class="bi bi-list" aria-hidden="true"></i>
         </button>
-        <div class="search-box">
+        <div class="search-box topbar-search">
           <i class="bi bi-search" aria-hidden="true"></i>
           <input v-model="q" type="search" :placeholder="$t('nav.searchPlaceholder')" />
         </div>
         <div class="top-actions">
+          <button
+            class="icon-btn search-toggle"
+            type="button"
+            :aria-label="$t('common.search')"
+            :aria-expanded="searchOpen"
+            @click="toggleSearch"
+          >
+            <i class="bi" :class="searchOpen ? 'bi-x-lg' : 'bi-search'" aria-hidden="true"></i>
+          </button>
           <LangSwitch />
           <NotificationBell />
           <RouterLink v-if="auth.isMerchant" class="btn top-cta" to="/merchant/test">
@@ -137,6 +146,17 @@
           </RouterLink>
         </div>
       </header>
+      <div v-if="searchOpen" class="mobile-search">
+        <div class="search-box">
+          <i class="bi bi-search" aria-hidden="true"></i>
+          <input
+            ref="mobileSearchInput"
+            v-model="q"
+            type="search"
+            :placeholder="$t('nav.searchPlaceholder')"
+          />
+        </div>
+      </div>
       <main class="main">
         <router-view />
       </main>
@@ -145,7 +165,7 @@
 </template>
 
 <script setup>
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import LangSwitch from '../components/LangSwitch.vue'
@@ -156,6 +176,8 @@ const router = useRouter()
 const route = useRoute()
 const q = ref('')
 const navOpen = ref(false)
+const searchOpen = ref(false)
+const mobileSearchInput = ref(null)
 
 const initials = computed(() => {
   const n = auth.user?.fullName || 'F'
@@ -164,6 +186,14 @@ const initials = computed(() => {
 
 function closeNav() {
   navOpen.value = false
+}
+
+async function toggleSearch() {
+  searchOpen.value = !searchOpen.value
+  if (searchOpen.value) {
+    await nextTick()
+    mobileSearchInput.value?.focus()
+  }
 }
 
 function onNavClick(e) {
@@ -176,7 +206,10 @@ function logout() {
   router.push('/login')
 }
 
-watch(() => route.fullPath, closeNav)
+watch(() => route.fullPath, () => {
+  closeNav()
+  searchOpen.value = false
+})
 watch(navOpen, (v) => {
   document.body.style.overflow = v ? 'hidden' : ''
 })

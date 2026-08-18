@@ -17,7 +17,8 @@
       @reset="resetFilters"
     />
 
-    <div class="card">
+    <div class="card table-card">
+      <div class="table-wrap">
       <table>
         <thead>
           <tr>
@@ -51,6 +52,7 @@
           </tr>
         </tbody>
       </table>
+      </div>
       <p v-if="!merchants.length" class="muted">{{ $t('common.noResults') }}</p>
       <PaginationBar
         v-model:page="page"

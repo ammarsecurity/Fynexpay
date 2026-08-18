@@ -192,4 +192,20 @@ onUnmounted(() => {
   place-items: center;
 }
 .notif-empty i { font-size: 1.6rem; opacity: 0.45; }
+@media (max-width: 600px) {
+  .notif-panel {
+    position: fixed;
+    top: calc(56px + env(safe-area-inset-top, 0px) + 8px);
+    inset-inline: 12px;
+    width: auto;
+    max-height: min(70dvh, 520px);
+    display: flex;
+    flex-direction: column;
+  }
+  .notif-list {
+    max-height: none;
+    flex: 1;
+  }
+  .notif-list li { min-height: 44px; }
+}
 </style>

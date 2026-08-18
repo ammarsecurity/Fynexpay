@@ -363,4 +363,11 @@ dd.strong { color: var(--brand-secondary); font-size: 1.05rem; }
   .detail-grid { grid-template-columns: 1fr; }
   .link-row { flex-direction: column; }
 }
+@media (max-width: 600px) {
+  .modal-panel {
+    padding: 16px 16px max(16px, env(safe-area-inset-bottom));
+  }
+  .modal-head { align-items: center; }
+}
+
 </style>

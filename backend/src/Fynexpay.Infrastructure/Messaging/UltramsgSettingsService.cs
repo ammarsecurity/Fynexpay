@@ -37,7 +37,11 @@ public class UltramsgSettingsService : IUltramsgSettingsService
             settings = JsonSerializer.Deserialize<UltramsgSettings>(row.Value, JsonOpts) ?? new UltramsgSettings();
         }
 
+        var missingTemplates = settings.Templates == null || settings.Templates.Count < WhatsAppTemplates.AllKeys.Count;
         Normalize(settings);
+        if (missingTemplates)
+            await PersistAsync(settings, ct);
+
         _cache = settings;
         return Clone(settings);
     }
@@ -131,6 +135,9 @@ public class UltramsgSettingsService : IUltramsgSettingsService
             s.EmailRegisterBody = "<p>رمز التحقق: <strong>{code}</strong></p>";
         if (string.IsNullOrWhiteSpace(s.EmailCheckoutBody))
             s.EmailCheckoutBody = "<p>رمز تأكيد الدفع: <strong>{code}</strong></p>";
+
+        WhatsAppTemplates.EnsureDefaults(s);
+        s.DefaultImageUrl = string.IsNullOrWhiteSpace(s.DefaultImageUrl) ? null : s.DefaultImageUrl.Trim();
     }
 
     private static UltramsgSettings Clone(UltramsgSettings s) => new()
@@ -139,6 +146,7 @@ public class UltramsgSettingsService : IUltramsgSettingsService
         Channel = s.Channel,
         RequireMerchantRegisterOtp = s.RequireMerchantRegisterOtp,
         RequireCheckoutOtp = s.RequireCheckoutOtp,
+        RequireAdminLoginOtp = s.RequireAdminLoginOtp,
         WhatsAppEnabled = s.WhatsAppEnabled,
         InstanceId = s.InstanceId,
         Token = s.Token,
@@ -159,6 +167,15 @@ public class UltramsgSettingsService : IUltramsgSettingsService
         EmailRegisterSubject = s.EmailRegisterSubject,
         EmailRegisterBody = s.EmailRegisterBody,
         EmailCheckoutSubject = s.EmailCheckoutSubject,
-        EmailCheckoutBody = s.EmailCheckoutBody
+        EmailCheckoutBody = s.EmailCheckoutBody,
+        DefaultImageUrl = s.DefaultImageUrl,
+        Templates = (s.Templates ?? [])
+            .Select(t => new WhatsAppTemplate
+            {
+                Key = t.Key,
+                Body = t.Body,
+                ImageUrl = t.ImageUrl
+            })
+            .ToList()
     };
 }

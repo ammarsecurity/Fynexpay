@@ -612,5 +612,9 @@ onMounted(load)
 }
 @media (max-width: 600px) {
   .action-grid, .secondary, .commission-grid { grid-template-columns: 1fr; }
+  .head-actions { width: 100%; }
+  .head-actions .btn { flex: 1; min-height: 44px; }
+  .mode-switch { width: 100%; display: flex; }
+  .mode-switch button { flex: 1; min-height: 44px; }
 }
 </style>

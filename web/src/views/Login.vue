@@ -140,12 +140,11 @@ const loginOtpBanner = computed(() => {
 onMounted(async () => {
   try {
     const { data } = await api.get('/api/auth/register/policy')
-    requireOtp.value = !!data.requireWhatsAppOtp
     needPhone.value = data.whatsAppEnabled !== false
     needEmailChannel.value = !!data.emailEnabled
     if (data.channel === 'Email') needPhone.value = false
   } catch {
-    requireOtp.value = false
+    /* channels optional for the OTP step */
   }
 })
 
@@ -161,16 +160,17 @@ async function submit() {
   error.value = ''
   loading.value = true
   try {
-    if (!requireOtp.value) {
-      const { data } = await api.post('/api/auth/login', {
-        email: email.value,
-        password: password.value
-      })
-      completeAuth(dashboardUrl, data, () => { pending.value = true })
+    const { data } = await api.post('/api/auth/login', {
+      email: email.value,
+      password: password.value
+    })
+    completeAuth(dashboardUrl, data, () => { pending.value = true })
+  } catch (e) {
+    if (e.response?.data?.code === 'otp_required') {
+      requireOtp.value = true
+      await sendOtp()
       return
     }
-    await sendOtp()
-  } catch (e) {
     error.value = e.response?.data?.message || t('loginFail')
   } finally {
     loading.value = false

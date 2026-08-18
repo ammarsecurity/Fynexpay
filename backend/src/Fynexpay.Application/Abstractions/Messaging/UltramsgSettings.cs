@@ -17,6 +17,8 @@ public class UltramsgSettings
 
     public bool RequireMerchantRegisterOtp { get; set; } = true;
     public bool RequireCheckoutOtp { get; set; } = true;
+    /// <summary>OTP عند دخول حساب الإدارة. مطفأ افتراضياً.</summary>
+    public bool RequireAdminLoginOtp { get; set; }
 
     // —— WhatsApp (Ultramsg) ——
     public bool WhatsAppEnabled { get; set; } = true;
@@ -33,6 +35,11 @@ public class UltramsgSettings
         "رمز تأكيد تعديل الملف الشخصي في Fynexpay: {code}\nصالح لمدة 5 دقائق. لا تشاركه مع أحد.";
     public string PasswordResetMessage { get; set; } =
         "رمز استعادة كلمة المرور في Fynexpay: {code}\nصالح لمدة 5 دقائق. لا تشاركه مع أحد.";
+
+    /// <summary>صورة افتراضية تُرفق مع الرسائل إن لم يحدد القالب صورة خاصة.</summary>
+    public string? DefaultImageUrl { get; set; }
+
+    public List<WhatsAppTemplate> Templates { get; set; } = [];
 
     // —— Email (SMTP) ——
     public bool EmailEnabled { get; set; }
@@ -85,6 +92,8 @@ public interface IUltramsgClient
     Task<UltramsgStatusResult> GetStatusAsync(CancellationToken ct = default);
     Task<byte[]?> GetQrImageAsync(CancellationToken ct = default);
     Task SendChatAsync(string phoneE164, string body, CancellationToken ct = default);
+    Task SendImageAsync(string phoneE164, string imageUrl, string? caption, CancellationToken ct = default);
+    Task SendTemplateAsync(string phoneE164, string templateKey, IReadOnlyDictionary<string, string?> vars, CancellationToken ct = default);
 }
 
 public interface IEmailSender

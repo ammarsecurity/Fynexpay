@@ -308,7 +308,7 @@ public class OtpService
         _db.OtpChallenges.Add(challenge);
         await _db.SaveChangesAsync(ct);
 
-        var via = await DeliverWhatsAppAsync(settings, phone, code, settings.ProfileChangeMessage, ct);
+        var via = await DeliverWhatsAppAsync(phone, code, WhatsAppTemplateKeys.OtpProfile, ct);
         return new OtpSendResult(challenge.Id, MaskPhone(phone), 300, DevCode(code), via);
     }
 
@@ -360,10 +360,7 @@ public class OtpService
         _db.OtpChallenges.Add(challenge);
         await _db.SaveChangesAsync(ct);
 
-        var template = string.IsNullOrWhiteSpace(settings.PasswordResetMessage)
-            ? "رمز استعادة كلمة المرور في Fynexpay: {code}\nصالح لمدة 5 دقائق. لا تشاركه مع أحد."
-            : settings.PasswordResetMessage;
-        var via = await DeliverWhatsAppAsync(settings, phone, code, template, ct);
+        var via = await DeliverWhatsAppAsync(phone, code, WhatsAppTemplateKeys.OtpReset, ct);
         return new OtpSendResult(challenge.Id, MaskPhone(phone), 300, DevCode(code), via);
     }
 
@@ -387,7 +384,7 @@ public class OtpService
     public async Task<OtpSendResult> SendLoginOtpAsync(User user, CancellationToken ct = default)
     {
         var settings = await _settings.GetAsync(ct);
-        EnsureOtpEnabled(settings, forCheckout: false);
+        EnsureOtpEnabled(settings, forCheckout: false, forLogin: true);
 
         var useWa = settings.UsesWhatsApp();
         var useEmail = settings.UsesEmail();
@@ -494,18 +491,16 @@ public class OtpService
     }
 
     private async Task<string> DeliverWhatsAppAsync(
-        UltramsgSettings settings,
         string phone,
         string code,
-        string template,
+        string templateKey,
         CancellationToken ct)
     {
         try
         {
-            var body = template.Replace("{code}", code, StringComparison.Ordinal);
-            await _ultramsg.SendChatAsync(phone, body, ct);
+            await _ultramsg.SendTemplateAsync(phone, templateKey, new Dictionary<string, string?> { ["code"] = code }, ct);
             if (_isDevelopment)
-                _logger.LogInformation("Profile WhatsApp OTP {Phone}: {Code}", MaskPhone(phone), code);
+                _logger.LogInformation("WhatsApp OTP {Phone}: {Code}", MaskPhone(phone), code);
             return "WhatsApp";
         }
         catch (Exception ex)
@@ -536,9 +531,8 @@ public class OtpService
         {
             try
             {
-                var body = (forCheckout ? settings.CheckoutMessage : settings.MerchantRegisterMessage)
-                    .Replace("{code}", code, StringComparison.Ordinal);
-                await _ultramsg.SendChatAsync(phone, body, ct);
+                var key = forCheckout ? WhatsAppTemplateKeys.OtpCheckout : WhatsAppTemplateKeys.OtpRegister;
+                await _ultramsg.SendTemplateAsync(phone, key, new Dictionary<string, string?> { ["code"] = code }, ct);
                 sent.Add("WhatsApp");
             }
             catch (Exception ex)
@@ -598,14 +592,14 @@ public class OtpService
 
     private string? DevCode(string code) => _isDevelopment ? code : null;
 
-    private static void EnsureOtpEnabled(UltramsgSettings settings, bool forCheckout)
+    private static void EnsureOtpEnabled(UltramsgSettings settings, bool forCheckout, bool forLogin = false)
     {
         if (!settings.Enabled)
             throw new InvalidOperationException("خدمة التحقق غير مفعّلة حالياً");
 
         if (forCheckout && !settings.RequireCheckoutOtp)
             throw new InvalidOperationException("تأكيد الدفع عبر OTP غير مفعّل");
-        if (!forCheckout && !settings.RequireMerchantRegisterOtp)
+        if (!forCheckout && !forLogin && !settings.RequireMerchantRegisterOtp)
             throw new InvalidOperationException("تأكيد التسجيل عبر OTP غير مفعّل");
 
         if (!settings.UsesWhatsApp() && !settings.UsesEmail())

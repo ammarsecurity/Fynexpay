@@ -110,7 +110,8 @@
       @reset="resetFilters"
     />
 
-    <div class="card">
+    <div class="card table-card">
+      <div class="table-wrap">
       <table>
         <thead>
           <tr>
@@ -129,6 +130,7 @@
           </tr>
         </tbody>
       </table>
+      </div>
       <div v-if="!payouts.length" class="empty">
         <strong>{{ $t('payouts.emptyTitle') }}</strong>
         <p class="muted">{{ $t('payouts.emptyHint') }}</p>

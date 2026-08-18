@@ -1064,5 +1064,8 @@ dd {
 @media (max-width: 560px) {
   .metrics { grid-template-columns: 1fr; }
   .provider-grid { grid-template-columns: 1fr 1fr; }
+  .modal-panel {
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
 }
 </style>

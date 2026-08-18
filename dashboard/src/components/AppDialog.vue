@@ -131,4 +131,23 @@ function onCancel() { close(state.type === 'alert' ? true : false) }
   flex-wrap: wrap;
 }
 .dlg-actions .btn { min-width: 110px; justify-content: center; }
+@media (max-width: 600px) {
+  .dlg-root {
+    padding: 12px 12px max(16px, env(safe-area-inset-bottom));
+    align-items: end;
+    place-items: end stretch;
+  }
+  .dlg-panel {
+    width: 100%;
+    border-radius: 20px;
+    padding: 22px 18px 18px;
+  }
+  .dlg-actions {
+    flex-direction: column-reverse;
+  }
+  .dlg-actions .btn {
+    width: 100%;
+    min-height: 44px;
+  }
+}
 </style>
